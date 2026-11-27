@@ -146,12 +146,11 @@ class ShoppingReminderWorker(
                 if (count > 4) " and ${count - 4} more..." else ""
 
         // Inbox style for expandable notification
-        val inboxStyle = NotificationCompat.InboxStyle().apply {
-            setBigContentTitle(contentTitle)
-            pendingItemNames.take(6).forEach { addLine("• $it") }
-            if (count > 6) {
-                setSummaryText("+${count - 6} more uncompleted items")
-            }
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle(contentTitle)
+        pendingItemNames.take(6).forEach { inboxStyle.addLine("• $it") }
+        if (count > 6) {
+            inboxStyle.setSummaryText("+${count - 6} more uncompleted items")
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
