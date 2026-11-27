@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Сімейний список покупок</string>
+    <string name="notification_channel_name">Нагадування про покупки</string>
+    <string name="notification_channel_desc">Розумні нагадування про некуплені товари для сім\'ї</string>
+    
+    <!-- Notifications -->
+    <string name="notification_items_needed">%1$s (потрібно: %2$d)</string>
+    <string name="notification_and_more">та ще %1$d...</string>
+    <string name="notification_suppressed_log">Усі товари куплено. Сповіщення приглушено.</string>
+
+    <!-- Navigation & Titles -->
+    <string name="title_shopping_list">Список покупок</string>
+    <string name="title_weekend_master">Майстер вихідних</string>
+    <string name="title_smart_reminders">Розумні нагадування</string>
+    <string name="title_settings">Налаштування Firebase</string>
+
+    <!-- Actions -->
+    <string name="action_add_item">Додати</string>
+    <string name="action_clear_completed">Очистити куплені</string>
+    <string name="action_apply_template">Завантажити в 1 клік</string>
+    <string name="action_merge">Об\'єднати</string>
+    <string name="action_replace">Почати з нуля</string>
+    <string name="action_save">Зберегти</string>
+
+    <!-- Categories -->
+    <string name="cat_produce">Овочі та фрукти</string>
+    <string name="cat_dairy">Молочні продукти та яйця</string>
+    <string name="cat_bakery">Випічка та хліб</string>
+    <string name="cat_meat">М\'ясо та морепродукти</string>
+    <string name="cat_pantry">Бакалія та крупи</string>
+    <string name="cat_frozen">Заморожені продукти</string>
+    <string name="cat_household">Побутова хімія та дім</string>
+    <string name="cat_personal">Особиста гігієна</string>
+</resources>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FamilyCart</string>
+    <string name="notification_channel_name">Shopping Reminders</string>
+    <string name="notification_channel_desc">Smart reminders for pending family shopping items</string>
+
+    <string name="notification_items_needed">%1$s (%2$d needed)</string>
+    <string name="notification_and_more">and %1$d more...</string>
+    <string name="notification_suppressed_log">All items completed. Notification suppressed.</string>
+
+    <string name="title_shopping_list">Shopping List</string>
+    <string name="title_weekend_master">Weekend Master</string>
+    <string name="title_smart_reminders">Smart Reminders</string>
+    <string name="title_settings">Firebase Settings</string>
+
+    <string name="action_add_item">Add</string>
+    <string name="action_clear_completed">Clear Done</string>
+    <string name="action_apply_template">Load 1-Tap</string>
+    <string name="action_merge">Merge</string>
+    <string name="action_replace">Replace</string>
+    <string name="action_save">Save</string>
+
+    <string name="cat_produce">Produce</string>
+    <string name="cat_dairy">Dairy &amp; Eggs</string>
+    <string name="cat_bakery">Bakery</string>
+    <string name="cat_meat">Meat &amp; Seafood</string>
+    <string name="cat_pantry">Pantry</string>
+    <string name="cat_frozen">Frozen</string>
+    <string name="cat_household">Household</string>
+    <string name="cat_personal">Personal Care</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "Family Shopping List & Sync",
+  "description": "Real-time collaborative family shopping list with dynamic Firebase configuration, category management, Weekend Template Master, and companion native Android app with smart WorkManager notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
