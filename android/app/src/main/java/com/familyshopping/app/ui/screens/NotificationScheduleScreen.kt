@@ -43,19 +43,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.familyshopping.app.R
 import com.familyshopping.app.data.model.Category
 import com.familyshopping.app.data.model.NotificationSchedule
+import com.familyshopping.app.ui.AppStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationScheduleScreen(
     schedules: List<NotificationSchedule>,
     categories: List<Category>,
+    lang: String,
     onToggleSchedule: (NotificationSchedule) -> Unit,
     onSaveSchedule: (NotificationSchedule) -> Unit,
     onTestScheduleNow: (NotificationSchedule) -> Unit,
@@ -66,7 +66,7 @@ fun NotificationScheduleScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.title_smart_reminders), fontWeight = FontWeight.SemiBold) },
+                title = { Text(AppStrings.remindersTitle(lang), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -104,7 +104,7 @@ fun NotificationScheduleScreen(
                         Icon(Icons.Default.Notifications, contentDescription = null, tint = Color(0xFF18181B))
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "WorkManager triggers at your chosen time and notifies ONLY if uncompleted items exist in selected categories.",
+                            text = AppStrings.remindersDesc(lang),
                             fontSize = 12.sp,
                             color = Color(0xFF52525B)
                         )
@@ -142,10 +142,10 @@ fun NotificationScheduleScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
                         val catSummary = if (schedule.categoryIds.isEmpty()) {
-                            "All categories"
+                            AppStrings.allCategories(lang)
                         } else {
                             schedule.categoryIds.joinToString(", ") { id ->
-                                categories.find { it.id == id }?.name ?: id
+                                categories.find { it.id == id }?.let { AppStrings.categoryName(it, lang) } ?: id
                             }
                         }
                         Text(
@@ -159,7 +159,7 @@ fun NotificationScheduleScreen(
                             onClick = { onTestScheduleNow(schedule) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Check & Notify Now", fontSize = 12.sp)
+                            Text(AppStrings.checkNowBtn(lang), fontSize = 12.sp)
                         }
                     }
                 }
@@ -170,6 +170,7 @@ fun NotificationScheduleScreen(
     if (showCreateDialog) {
         CreateScheduleDialog(
             categories = categories,
+            lang = lang,
             onDismiss = { showCreateDialog = false },
             onSave = { title, time, selectedCats ->
                 val newSchedule = NotificationSchedule(
@@ -190,6 +191,7 @@ fun NotificationScheduleScreen(
 @Composable
 private fun CreateScheduleDialog(
     categories: List<Category>,
+    lang: String,
     onDismiss: () -> Unit,
     onSave: (String, String, List<String>) -> Unit
 ) {
@@ -199,7 +201,7 @@ private fun CreateScheduleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Smart Reminder", fontWeight = FontWeight.SemiBold) },
+        title = { Text(AppStrings.remindersTitle(lang), fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
@@ -216,7 +218,6 @@ private fun CreateScheduleDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("Monitored Categories (empty = all):", fontSize = 12.sp, color = Color(0xFF52525B))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -229,7 +230,7 @@ private fun CreateScheduleDialog(
                                 if (isSelected) selectedCategoryIds.remove(cat.id)
                                 else selectedCategoryIds.add(cat.id)
                             },
-                            label = { Text("${cat.icon} ${cat.name}", fontSize = 11.sp) }
+                            label = { Text("${cat.icon} ${AppStrings.categoryName(cat, lang)}", fontSize = 11.sp) }
                         )
                     }
                 }
@@ -243,12 +244,12 @@ private fun CreateScheduleDialog(
                     }
                 }
             ) {
-                Text(stringResource(R.string.action_save))
+                Text(AppStrings.saveBtn(lang))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(AppStrings.cancelButton(lang))
             }
         }
     )

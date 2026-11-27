@@ -85,4 +85,4 @@ export interface RecentItem {
   lastUsedAt: number;
 }
 
-export type SupportedLocale = 'en' | 'uk';
+export type SupportedLocale = 'en' | 'uk' | 'ru';

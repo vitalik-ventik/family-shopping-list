@@ -32,24 +32,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.familyshopping.app.R
 import com.familyshopping.app.data.model.ShoppingTemplate
+import com.familyshopping.app.ui.AppStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WeekendTemplateScreen(
     templates: List<ShoppingTemplate>,
+    lang: String,
     onApplyTemplate: (ShoppingTemplate, Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.title_weekend_master), fontWeight = FontWeight.SemiBold) },
+                title = { Text(AppStrings.weekendMasterTitle(lang), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -107,7 +107,7 @@ fun WeekendTemplateScreen(
                                 onClick = { onApplyTemplate(template, false) },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text(stringResource(R.string.action_replace), fontSize = 12.sp)
+                                Text(AppStrings.replaceBtn(lang), fontSize = 12.sp)
                             }
                             Button(
                                 onClick = { onApplyTemplate(template, true) },
@@ -116,7 +116,7 @@ fun WeekendTemplateScreen(
                             ) {
                                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text(stringResource(R.string.action_merge), fontSize = 12.sp)
+                                Text(AppStrings.mergeBtn(lang), fontSize = 12.sp)
                             }
                         }
                     }

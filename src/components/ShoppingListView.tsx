@@ -118,8 +118,39 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     return uniqueItemsInUsageOrder.filter((r) => r.title.trim().toLowerCase().includes(q));
   }, [uniqueItemsInUsageOrder, newTitle]);
 
-  const filteredItems = useMemo(() => {
+  const itemsInSelectedStatus = useMemo(() => {
     return items.filter((item) => {
+      if (statusFilter === 'pending') return !item.completed && !item.cancelled;
+      if (statusFilter === 'urgent') return Boolean(item.urgent && !item.completed && !item.cancelled);
+      if (statusFilter === 'completed') return item.completed && !item.cancelled;
+      if (statusFilter === 'cancelled') return Boolean(item.cancelled);
+      return !item.cancelled; // 'all'
+    });
+  }, [items, statusFilter]);
+
+  const categoryCountsInStatus = useMemo(() => {
+    const counts = new Map<string, number>();
+    itemsInSelectedStatus.forEach((item) => {
+      counts.set(item.categoryId, (counts.get(item.categoryId) || 0) + 1);
+    });
+    return counts;
+  }, [itemsInSelectedStatus]);
+
+  const visibleCategories = useMemo(() => {
+    return categories.filter((c) => (categoryCountsInStatus.get(c.id) || 0) > 0);
+  }, [categories, categoryCountsInStatus]);
+
+  useEffect(() => {
+    if (
+      selectedCategoryFilter !== 'all' &&
+      (categoryCountsInStatus.get(selectedCategoryFilter) || 0) === 0
+    ) {
+      setSelectedCategoryFilter('all');
+    }
+  }, [selectedCategoryFilter, categoryCountsInStatus]);
+
+  const filteredItems = useMemo(() => {
+    return itemsInSelectedStatus.filter((item) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesTitle = item.title.toLowerCase().includes(q);
@@ -130,19 +161,13 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
         if (!matchesTitle && !matchesNote && !matchesCat) return false;
       }
 
-      if (statusFilter === 'pending' && (item.completed || item.cancelled)) return false;
-      if (statusFilter === 'completed' && (!item.completed || item.cancelled)) return false;
-      if (statusFilter === 'urgent' && (!item.urgent || item.completed || item.cancelled)) return false;
-      if (statusFilter === 'cancelled' && !item.cancelled) return false;
-      if (statusFilter === 'all' && item.cancelled) return false;
-
       if (selectedCategoryFilter !== 'all' && item.categoryId !== selectedCategoryFilter) {
         return false;
       }
 
       return true;
     });
-  }, [items, searchQuery, statusFilter, selectedCategoryFilter, categoryMap, getCategoryName]);
+  }, [itemsInSelectedStatus, searchQuery, selectedCategoryFilter, categoryMap, getCategoryName]);
 
   const totalItemsCount = items.filter((i) => !i.cancelled).length;
   const uncompletedCount = items.filter((i) => !i.completed && !i.cancelled).length;
@@ -167,10 +192,7 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
 
     categories.forEach((cat) => {
       const catItems = filteredItems.filter((i) => i.categoryId === cat.id);
-      if (
-        catItems.length > 0 ||
-        (selectedCategoryFilter === 'all' && !searchQuery.trim() && statusFilter === 'all')
-      ) {
+      if (catItems.length > 0) {
         groups.push({ category: cat, items: catItems });
       }
     });
@@ -192,7 +214,7 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     }
 
     return groups;
-  }, [categories, filteredItems, selectedCategoryFilter, searchQuery, statusFilter, t]);
+  }, [categories, filteredItems, t]);
 
   const handleToggleItem = async (item: ShoppingItem) => {
     await firebaseService.toggleItem(item.id);
@@ -772,44 +794,43 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
         </div>
       </div>
 
-      {/* Minimal Category Filter Strip */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-        <button
-          type="button"
-          onClick={() => setSelectedCategoryFilter('all')}
-          className={`px-2.5 py-1 rounded-md font-medium shrink-0 transition-colors ${
-            selectedCategoryFilter === 'all'
-              ? 'bg-neutral-900 text-white'
-              : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'
-          }`}
-        >
-          {t.allCategoriesChip}
-        </button>
-        {categories.map((c) => {
-          const count = items.filter((i) => !i.completed && !i.cancelled && i.categoryId === c.id).length;
-          if (count === 0 && selectedCategoryFilter !== c.id) return null;
-          return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setSelectedCategoryFilter(c.id)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium shrink-0 transition-colors tabular-nums ${
-                selectedCategoryFilter === c.id
-                  ? 'bg-neutral-900 text-white'
-                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
-              }`}
-            >
-              <span>{c.icon}</span>
-              <span>{getCategoryName(c)}</span>
-              {count > 0 && (
+      {/* Minimal Category Filter Strip (only categories present in selected section) */}
+      {visibleCategories.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <button
+            type="button"
+            onClick={() => setSelectedCategoryFilter('all')}
+            className={`px-2.5 py-1 rounded-md font-medium shrink-0 transition-colors ${
+              selectedCategoryFilter === 'all'
+                ? 'bg-neutral-900 text-white'
+                : 'text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100'
+            }`}
+          >
+            {t.allCategoriesChip}
+          </button>
+          {visibleCategories.map((c) => {
+            const count = categoryCountsInStatus.get(c.id) || 0;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setSelectedCategoryFilter(c.id)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium shrink-0 transition-colors tabular-nums ${
+                  selectedCategoryFilter === c.id
+                    ? 'bg-neutral-900 text-white'
+                    : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+                }`}
+              >
+                <span>{c.icon}</span>
+                <span>{getCategoryName(c)}</span>
                 <span className={selectedCategoryFilter === c.id ? 'text-neutral-300' : 'text-neutral-400'}>
                   {count}
                 </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Main Items Area */}
       {filteredItems.length === 0 ? (
@@ -924,7 +945,7 @@ function formatShortTimestamp(ts: number, locale: string): string {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
 
-  const loc = locale === 'uk' ? 'uk-UA' : 'en-US';
+  const loc = locale === 'uk' ? 'uk-UA' : locale === 'ru' ? 'ru-RU' : 'en-US';
   const timeStr = date.toLocaleTimeString(loc, {
     hour: '2-digit',
     minute: '2-digit',

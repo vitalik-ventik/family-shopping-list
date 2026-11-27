@@ -3,6 +3,7 @@ package com.familyshopping.app.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,6 +38,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -61,7 +64,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,10 +73,10 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import com.familyshopping.app.R
 import com.familyshopping.app.data.model.Category
 import com.familyshopping.app.data.model.RecentItem
 import com.familyshopping.app.data.model.ShoppingItem
+import com.familyshopping.app.ui.AppStrings
 
 private enum class AndroidStatusFilter {
     PENDING,
@@ -84,6 +86,13 @@ private enum class AndroidStatusFilter {
     ALL
 }
 
+private sealed class PendingConfirmAction {
+    data class CancelItem(val item: ShoppingItem) : PendingConfirmAction()
+    data class DeleteItem(val item: ShoppingItem) : PendingConfirmAction()
+    data object ClearCompleted : PendingConfirmAction()
+    data object ClearCancelled : PendingConfirmAction()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShoppingListScreen(
@@ -91,6 +100,8 @@ fun ShoppingListScreen(
     categories: List<Category>,
     recentItems: List<RecentItem>,
     isConnected: Boolean,
+    lang: String,
+    onChangeLanguage: (String) -> Unit,
     onToggleItem: (ShoppingItem) -> Unit,
     onCancelItem: (ShoppingItem) -> Unit,
     onRestoreItem: (ShoppingItem) -> Unit,
@@ -103,9 +114,10 @@ fun ShoppingListScreen(
     onOpenSettings: () -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
+    var showLangMenu by remember { mutableStateOf(false) }
     var statusFilter by remember { mutableStateOf(AndroidStatusFilter.PENDING) }
     var selectedCategoryFilter by remember { mutableStateOf<String?>(null) }
-    val isUk = remember { Locale.getDefault().language != "en" }
+    var pendingConfirmAction by remember { mutableStateOf<PendingConfirmAction?>(null) }
 
     val pendingCount = items.count { !it.completed && !it.cancelled }
     val urgentCount = items.count { !it.completed && !it.cancelled && it.urgent }
@@ -119,18 +131,34 @@ fun ShoppingListScreen(
         }
     }
 
-    val categoryFilteredItems = if (selectedCategoryFilter == null) {
-        items
-    } else {
-        items.filter { it.categoryId == selectedCategoryFilter }
+    val itemsInStatus = remember(items, statusFilter) {
+        when (statusFilter) {
+            AndroidStatusFilter.PENDING -> items.filter { !it.completed && !it.cancelled }
+            AndroidStatusFilter.URGENT -> items.filter { !it.completed && !it.cancelled && it.urgent }
+            AndroidStatusFilter.COMPLETED -> items.filter { it.completed && !it.cancelled }
+            AndroidStatusFilter.CANCELLED -> items.filter { it.cancelled }
+            AndroidStatusFilter.ALL -> items.filter { !it.cancelled }
+        }
     }
 
-    val displayedItems = when (statusFilter) {
-        AndroidStatusFilter.PENDING -> categoryFilteredItems.filter { !it.completed && !it.cancelled }
-        AndroidStatusFilter.URGENT -> categoryFilteredItems.filter { !it.completed && !it.cancelled && it.urgent }
-        AndroidStatusFilter.COMPLETED -> categoryFilteredItems.filter { it.completed && !it.cancelled }
-        AndroidStatusFilter.CANCELLED -> categoryFilteredItems.filter { it.cancelled }
-        AndroidStatusFilter.ALL -> categoryFilteredItems.filter { !it.cancelled }
+    val categoryCountsInStatus = remember(itemsInStatus) {
+        itemsInStatus.groupingBy { it.categoryId }.eachCount()
+    }
+
+    val visibleCategories = remember(categories, categoryCountsInStatus) {
+        categories.filter { (categoryCountsInStatus[it.id] ?: 0) > 0 }
+    }
+
+    LaunchedEffect(selectedCategoryFilter, visibleCategories) {
+        if (selectedCategoryFilter != null && visibleCategories.none { it.id == selectedCategoryFilter }) {
+            selectedCategoryFilter = null
+        }
+    }
+
+    val displayedItems = if (selectedCategoryFilter == null) {
+        itemsInStatus
+    } else {
+        itemsInStatus.filter { it.categoryId == selectedCategoryFilter }
     }
     val categoryMap = remember(categories) { categories.associateBy { it.id } }
 
@@ -140,39 +168,71 @@ fun ShoppingListScreen(
                 title = {
                     Column {
                         Text(
-                            text = stringResource(R.string.app_name),
+                            text = AppStrings.appName(lang),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 18.sp
                         )
                         Text(
-                            text = if (isUk) {
-                                "$pendingCount до покупки • " + if (isConnected) "Firestore" else "Локально"
-                            } else {
-                                "$pendingCount active • " + if (isConnected) "Firebase Sync" else "Local Mode"
-                            },
+                            text = AppStrings.subtitleStatus(lang, pendingCount, isConnected),
                             fontSize = 12.sp,
                             color = if (isConnected) Color(0xFF059669) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 actions = {
+                    Box {
+                        TextButton(
+                            onClick = { showLangMenu = true },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = AppStrings.langCodeLabel(lang),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF18181B)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showLangMenu,
+                            onDismissRequest = { showLangMenu = false }
+                        ) {
+                            listOf(
+                                "uk" to "Українська (UA)",
+                                "ru" to "Русский (RU)",
+                                "en" to "English (EN)"
+                            ).forEach { (code, label) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = label,
+                                            fontWeight = if (lang == code) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    onClick = {
+                                        onChangeLanguage(code)
+                                        showLangMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                     IconButton(onClick = onOpenWeekendTemplate) {
                         Icon(
                             Icons.Default.Star,
-                            contentDescription = stringResource(R.string.title_weekend_master),
+                            contentDescription = AppStrings.weekendMasterTitle(lang),
                             tint = Color(0xFFD97706)
                         )
                     }
                     IconButton(onClick = onOpenNotifications) {
                         Icon(
                             Icons.Default.Notifications,
-                            contentDescription = stringResource(R.string.title_smart_reminders)
+                            contentDescription = AppStrings.remindersTitle(lang)
                         )
                     }
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             Icons.Default.Settings,
-                            contentDescription = stringResource(R.string.title_settings)
+                            contentDescription = AppStrings.settingsTitle(lang)
                         )
                     }
                 }
@@ -184,7 +244,7 @@ fun ShoppingListScreen(
                 containerColor = Color(0xFF18181B),
                 contentColor = Color.White
             ) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.action_add_item))
+                Icon(Icons.Default.Add, contentDescription = AppStrings.addItemTitle(lang))
             }
         }
     ) { padding ->
@@ -210,13 +270,13 @@ fun ShoppingListScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.title_weekend_master),
+                            text = AppStrings.weekendMasterTitle(lang),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             color = Color(0xFF18181B)
                         )
                         Text(
-                            text = stringResource(R.string.action_apply_template),
+                            text = AppStrings.loadOneTap(lang),
                             fontSize = 12.sp,
                             color = Color(0xFF71717A)
                         )
@@ -226,7 +286,7 @@ fun ShoppingListScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF18181B)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text(stringResource(R.string.action_apply_template), fontSize = 12.sp)
+                        Text(AppStrings.loadOneTap(lang), fontSize = 12.sp)
                     }
                 }
             }
@@ -244,10 +304,7 @@ fun ShoppingListScreen(
                         selected = statusFilter == AndroidStatusFilter.PENDING,
                         onClick = { statusFilter = AndroidStatusFilter.PENDING },
                         label = {
-                            Text(
-                                if (isUk) "До покупки ($pendingCount)" else "Pending ($pendingCount)",
-                                fontSize = 12.sp
-                            )
+                            Text(AppStrings.statusPending(lang, pendingCount), fontSize = 12.sp)
                         }
                     )
                 }
@@ -257,10 +314,7 @@ fun ShoppingListScreen(
                             selected = statusFilter == AndroidStatusFilter.URGENT,
                             onClick = { statusFilter = AndroidStatusFilter.URGENT },
                             label = {
-                                Text(
-                                    if (isUk) "Термінові ($urgentCount)" else "Urgent ($urgentCount)",
-                                    fontSize = 12.sp
-                                )
+                                Text(AppStrings.statusUrgent(lang, urgentCount), fontSize = 12.sp)
                             }
                         )
                     }
@@ -270,10 +324,7 @@ fun ShoppingListScreen(
                         selected = statusFilter == AndroidStatusFilter.COMPLETED,
                         onClick = { statusFilter = AndroidStatusFilter.COMPLETED },
                         label = {
-                            Text(
-                                if (isUk) "Куплено ($completedCount)" else "Done ($completedCount)",
-                                fontSize = 12.sp
-                            )
+                            Text(AppStrings.statusCompleted(lang, completedCount), fontSize = 12.sp)
                         }
                     )
                 }
@@ -282,10 +333,7 @@ fun ShoppingListScreen(
                         selected = statusFilter == AndroidStatusFilter.CANCELLED,
                         onClick = { statusFilter = AndroidStatusFilter.CANCELLED },
                         label = {
-                            Text(
-                                if (isUk) "Відмінені ($cancelledCount)" else "Cancelled ($cancelledCount)",
-                                fontSize = 12.sp
-                            )
+                            Text(AppStrings.statusCancelled(lang, cancelledCount), fontSize = 12.sp)
                         }
                     )
                 }
@@ -294,17 +342,14 @@ fun ShoppingListScreen(
                         selected = statusFilter == AndroidStatusFilter.ALL,
                         onClick = { statusFilter = AndroidStatusFilter.ALL },
                         label = {
-                            Text(
-                                if (isUk) "Всі ($allNonCancelledCount)" else "All ($allNonCancelledCount)",
-                                fontSize = 12.sp
-                            )
+                            Text(AppStrings.statusAll(lang, allNonCancelledCount), fontSize = 12.sp)
                         }
                     )
                 }
             }
 
-            // Category Filter Chips
-            if (categories.isNotEmpty()) {
+            // Category Filter Chips (only categories present in selected section)
+            if (visibleCategories.isNotEmpty()) {
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -317,20 +362,23 @@ fun ShoppingListScreen(
                             selected = selectedCategoryFilter == null,
                             onClick = { selectedCategoryFilter = null },
                             label = {
-                                Text(
-                                    if (isUk) "Усі категорії" else "All categories",
-                                    fontSize = 12.sp
-                                )
+                                Text(AppStrings.allCategories(lang), fontSize = 12.sp)
                             }
                         )
                     }
-                    items(categories, key = { it.id }) { cat ->
+                    items(visibleCategories, key = { it.id }) { cat ->
+                        val catCount = categoryCountsInStatus[cat.id] ?: 0
                         FilterChip(
                             selected = selectedCategoryFilter == cat.id,
                             onClick = {
                                 selectedCategoryFilter = if (selectedCategoryFilter == cat.id) null else cat.id
                             },
-                            label = { Text("${cat.icon} ${cat.name}", fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    "${cat.icon} ${AppStrings.categoryName(cat, lang)} ($catCount)",
+                                    fontSize = 12.sp
+                                )
+                            }
                         )
                     }
                 }
@@ -354,14 +402,14 @@ fun ShoppingListScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (isUk) "Куплено: $completedCount" else "Done: $completedCount",
+                                text = AppStrings.doneHeader(lang, completedCount),
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            TextButton(onClick = onClearCompleted) {
+                            TextButton(onClick = { pendingConfirmAction = PendingConfirmAction.ClearCompleted }) {
                                 Text(
-                                    text = if (isUk) "Очистити куплені" else stringResource(R.string.action_clear_completed),
+                                    text = AppStrings.clearDone(lang),
                                     color = MaterialTheme.colorScheme.error,
                                     fontSize = 12.sp
                                 )
@@ -380,14 +428,14 @@ fun ShoppingListScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (isUk) "Відмінені: $cancelledCount" else "Cancelled: $cancelledCount",
+                                text = AppStrings.cancelledHeader(lang, cancelledCount),
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 12.sp,
                                 color = Color(0xFFB45309)
                             )
-                            TextButton(onClick = onClearCancelled) {
+                            TextButton(onClick = { pendingConfirmAction = PendingConfirmAction.ClearCancelled }) {
                                 Text(
-                                    text = if (isUk) "Видалити відмінені" else "Clear Cancelled",
+                                    text = AppStrings.clearCancelled(lang),
                                     color = MaterialTheme.colorScheme.error,
                                     fontSize = 12.sp
                                 )
@@ -412,13 +460,7 @@ fun ShoppingListScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(
-                                    text = when (statusFilter) {
-                                        AndroidStatusFilter.PENDING -> if (isUk) "Усе куплено! Список порожній" else "Nothing left to buy!"
-                                        AndroidStatusFilter.URGENT -> if (isUk) "Термінових товарів немає" else "No urgent items"
-                                        AndroidStatusFilter.COMPLETED -> if (isUk) "Ще немає куплених товарів" else "No completed items yet"
-                                        AndroidStatusFilter.CANCELLED -> if (isUk) "Відмінених товарів немає" else "No cancelled items"
-                                        AndroidStatusFilter.ALL -> if (isUk) "Список порожній" else "List is empty"
-                                    },
+                                    text = AppStrings.emptyMessage(lang, statusFilter.name),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color(0xFF71717A)
@@ -431,17 +473,66 @@ fun ShoppingListScreen(
                         val cat = categoryMap[item.categoryId]
                         ShoppingItemRow(
                             item = item,
-                            isUk = isUk,
-                            categoryLabel = cat?.let { "${it.icon} ${it.name}" } ?: "",
+                            lang = lang,
+                            categoryLabel = cat?.let { "${it.icon} ${AppStrings.categoryName(it, lang)}" } ?: "",
                             onToggle = { onToggleItem(item) },
-                            onCancel = { onCancelItem(item) },
+                            onCancel = { pendingConfirmAction = PendingConfirmAction.CancelItem(item) },
                             onRestore = { onRestoreItem(item) },
-                            onDelete = { onDeleteItem(item.id) }
+                            onDelete = { pendingConfirmAction = PendingConfirmAction.DeleteItem(item) }
                         )
                     }
                 }
             }
         }
+    }
+
+    pendingConfirmAction?.let { action ->
+        val isCancelAction = action is PendingConfirmAction.CancelItem
+        val confirmTitle = when (action) {
+            is PendingConfirmAction.CancelItem -> AppStrings.confirmCancelTitle(lang)
+            is PendingConfirmAction.DeleteItem -> AppStrings.confirmDeleteTitle(lang)
+            is PendingConfirmAction.ClearCompleted -> AppStrings.clearDone(lang)
+            is PendingConfirmAction.ClearCancelled -> AppStrings.clearCancelled(lang)
+        }
+        val confirmBody = when (action) {
+            is PendingConfirmAction.CancelItem -> AppStrings.confirmCancelBody(lang, action.item.title)
+            is PendingConfirmAction.DeleteItem -> AppStrings.confirmDeleteBody(lang, action.item.title)
+            is PendingConfirmAction.ClearCompleted -> AppStrings.confirmClearCompletedBody(lang, completedCount)
+            is PendingConfirmAction.ClearCancelled -> AppStrings.confirmClearCancelledBody(lang, cancelledCount)
+        }
+        val confirmBtnLabel = if (isCancelAction) {
+            AppStrings.confirmCancelBtn(lang)
+        } else {
+            AppStrings.confirmDeleteBtn(lang)
+        }
+        val confirmBtnColor = if (isCancelAction) Color(0xFFD97706) else Color(0xFFDC2626)
+
+        AlertDialog(
+            onDismissRequest = { pendingConfirmAction = null },
+            title = { Text(confirmTitle, fontWeight = FontWeight.SemiBold) },
+            text = { Text(confirmBody, fontSize = 14.sp) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        when (action) {
+                            is PendingConfirmAction.CancelItem -> onCancelItem(action.item)
+                            is PendingConfirmAction.DeleteItem -> onDeleteItem(action.item.id)
+                            is PendingConfirmAction.ClearCompleted -> onClearCompleted()
+                            is PendingConfirmAction.ClearCancelled -> onClearCancelled()
+                        }
+                        pendingConfirmAction = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = confirmBtnColor)
+                ) {
+                    Text(confirmBtnLabel)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingConfirmAction = null }) {
+                    Text(AppStrings.cancelButton(lang))
+                }
+            }
+        )
     }
 
     if (showAddDialog) {
@@ -452,6 +543,7 @@ fun ShoppingListScreen(
             categories = categories,
             recentItems = recentItems,
             pendingTitles = pendingTitles,
+            lang = lang,
             defaultCategoryId = selectedCategoryFilter ?: categories.firstOrNull()?.id ?: "cat_produce",
             onDismiss = { showAddDialog = false },
             onConfirm = { title, catId, qty, unit, urgent ->
@@ -474,7 +566,7 @@ private fun formatAndroidTimestamp(ts: Long): String {
 @Composable
 fun ShoppingItemRow(
     item: ShoppingItem,
-    isUk: Boolean,
+    lang: String,
     categoryLabel: String,
     onToggle: () -> Unit,
     onCancel: () -> Unit,
@@ -538,14 +630,14 @@ fun ShoppingItemRow(
                 ) {
                     if (item.createdAt > 0L) {
                         Text(
-                            text = (if (isUk) "Додано " else "Added ") + formatAndroidTimestamp(item.createdAt),
+                            text = AppStrings.addedPrefix(lang) + formatAndroidTimestamp(item.createdAt),
                             fontSize = 11.sp,
                             color = Color(0xFF71717A)
                         )
                     }
                     if (item.completed && !item.cancelled && item.completedAt != null) {
                         Text(
-                            text = (if (isUk) "• Куплено " else "• Bought ") + formatAndroidTimestamp(item.completedAt),
+                            text = AppStrings.boughtPrefix(lang) + formatAndroidTimestamp(item.completedAt),
                             fontSize = 11.sp,
                             color = Color(0xFF059669),
                             fontWeight = FontWeight.Medium
@@ -553,7 +645,7 @@ fun ShoppingItemRow(
                     }
                     if (item.cancelled && item.cancelledAt != null) {
                         Text(
-                            text = (if (isUk) "• Відмінено " else "• Cancelled ") + formatAndroidTimestamp(item.cancelledAt),
+                            text = AppStrings.cancelledPrefix(lang) + formatAndroidTimestamp(item.cancelledAt),
                             fontSize = 11.sp,
                             color = Color(0xFFB45309),
                             fontWeight = FontWeight.Medium
@@ -602,6 +694,7 @@ private fun AddItemDialog(
     categories: List<Category>,
     recentItems: List<RecentItem>,
     pendingTitles: Set<String>,
+    lang: String,
     defaultCategoryId: String,
     onDismiss: () -> Unit,
     onConfirm: (String, String, Int, String, Boolean) -> Unit
@@ -613,7 +706,6 @@ private fun AddItemDialog(
     var unit by remember { mutableStateOf("pcs") }
     var urgent by remember { mutableStateOf(false) }
 
-    val isUk = remember { Locale.getDefault().language != "en" }
     val categoryMap = remember(categories) { categories.associateBy { it.id } }
 
     val uniqueOrderedItems = remember(recentItems) {
@@ -635,7 +727,7 @@ private fun AddItemDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.action_add_item), fontWeight = FontWeight.SemiBold) },
+        title = { Text(AppStrings.addItemTitle(lang), fontWeight = FontWeight.SemiBold) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -647,7 +739,7 @@ private fun AddItemDialog(
                         title = it
                         dropdownExpanded = true
                     },
-                    label = { Text(if (isUk) "Додати товар..." else "Add item...") },
+                    label = { Text(AppStrings.addItemPlaceholder(lang)) },
                     singleLine = true,
                     trailingIcon = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -690,11 +782,7 @@ private fun AddItemDialog(
                     ) {
                         Column {
                             Text(
-                                text = if (isUk) {
-                                    "За порядком використання (${filteredRecent.size})"
-                                } else {
-                                    "By usage order (${filteredRecent.size})"
-                                },
+                                text = AppStrings.usageOrderLabel(lang, filteredRecent.size),
                                 fontSize = 11.sp,
                                 color = Color(0xFF71717A),
                                 fontWeight = FontWeight.Medium,
@@ -749,7 +837,7 @@ private fun AddItemDialog(
                                         }
                                         if (inList) {
                                             Text(
-                                                text = if (isUk) "у списку" else "in list",
+                                                text = AppStrings.inListBadge(lang),
                                                 fontSize = 11.sp,
                                                 color = Color(0xFF059669),
                                                 fontWeight = FontWeight.Medium
@@ -777,14 +865,14 @@ private fun AddItemDialog(
                     OutlinedTextField(
                         value = quantity.toString(),
                         onValueChange = { v -> quantity = v.toIntOrNull()?.coerceAtLeast(1) ?: 1 },
-                        label = { Text("Qty") },
+                        label = { Text(AppStrings.qtyLabel(lang)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = unit,
                         onValueChange = { unit = it },
-                        label = { Text("Unit") },
+                        label = { Text(AppStrings.unitLabel(lang)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
@@ -799,7 +887,7 @@ private fun AddItemDialog(
                             FilterChip(
                                 selected = selectedCategoryId == cat.id,
                                 onClick = { selectedCategoryId = cat.id },
-                                label = { Text("${cat.icon} ${cat.name}", fontSize = 11.sp) }
+                                label = { Text("${cat.icon} ${AppStrings.categoryName(cat, lang)}", fontSize = 11.sp) }
                             )
                         }
                     }
@@ -810,7 +898,7 @@ private fun AddItemDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Urgent", fontSize = 14.sp)
+                    Text(AppStrings.urgentLabel(lang), fontSize = 14.sp)
                     Switch(checked = urgent, onCheckedChange = { urgent = it })
                 }
             }
@@ -825,12 +913,12 @@ private fun AddItemDialog(
                 },
                 enabled = title.isNotBlank()
             ) {
-                Text(stringResource(R.string.action_add_item))
+                Text(AppStrings.addItemTitle(lang))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(AppStrings.cancelButton(lang))
             }
         }
     )

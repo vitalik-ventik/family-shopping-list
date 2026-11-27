@@ -29,6 +29,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_USER_NAME = "user_display_name"
         private const val KEY_SCHEDULES_JSON = "notification_schedules_json"
         private const val KEY_RECENT_ITEMS_JSON = "recent_items_json"
+        private const val KEY_APP_LANGUAGE = "app_language"
     }
 
     fun saveFirebaseConfig(config: FirebaseConfig) {
@@ -140,6 +141,21 @@ class PreferencesManager(context: Context) {
         prefs.edit().putString(KEY_USER_NAME, name).apply()
     }
 
+    fun getLanguage(): String {
+        val saved = prefs.getString(KEY_APP_LANGUAGE, null)
+        if (saved == "uk" || saved == "ru" || saved == "en") return saved
+        return when (Locale.getDefault().language) {
+            "ru" -> "ru"
+            "en" -> "en"
+            else -> "uk"
+        }
+    }
+
+    fun setLanguage(lang: String) {
+        val normalized = if (lang == "uk" || lang == "ru" || lang == "en") lang else "uk"
+        prefs.edit().putString(KEY_APP_LANGUAGE, normalized).apply()
+    }
+
     fun getRecentItems(): List<RecentItem> {
         val raw = prefs.getString(KEY_RECENT_ITEMS_JSON, null)
         if (raw.isNullOrBlank()) {
@@ -197,22 +213,27 @@ class PreferencesManager(context: Context) {
     }
 
     private fun defaultRecentItems(): List<RecentItem> {
-        val uk = Locale.getDefault().language != "en"
-        return if (uk) {
-            listOf(
-                RecentItem("Молоко 2.5%", "cat_dairy", 1, "л"),
-                RecentItem("Хліб", "cat_bakery", 1, "шт"),
-                RecentItem("Яйця", "cat_dairy", 1, "дес"),
-                RecentItem("Банани", "cat_produce", 1, "кг"),
-                RecentItem("Помідори", "cat_produce", 1, "кг")
-            )
-        } else {
-            listOf(
+        return when (getLanguage()) {
+            "en" -> listOf(
                 RecentItem("Whole Milk", "cat_dairy", 1, "L"),
                 RecentItem("Bread", "cat_bakery", 1, "loaf"),
                 RecentItem("Eggs", "cat_dairy", 12, "pcs"),
                 RecentItem("Bananas", "cat_produce", 1, "bunch"),
                 RecentItem("Tomatoes", "cat_produce", 1, "kg")
+            )
+            "ru" -> listOf(
+                RecentItem("Молоко 2.5%", "cat_dairy", 1, "л"),
+                RecentItem("Хлеб", "cat_bakery", 1, "шт"),
+                RecentItem("Яйца", "cat_dairy", 1, "дес"),
+                RecentItem("Бананы", "cat_produce", 1, "кг"),
+                RecentItem("Помидоры", "cat_produce", 1, "кг")
+            )
+            else -> listOf(
+                RecentItem("Молоко 2.5%", "cat_dairy", 1, "л"),
+                RecentItem("Хліб", "cat_bakery", 1, "шт"),
+                RecentItem("Яйця", "cat_dairy", 1, "дес"),
+                RecentItem("Банани", "cat_produce", 1, "кг"),
+                RecentItem("Помідори", "cat_produce", 1, "кг")
             )
         }
     }

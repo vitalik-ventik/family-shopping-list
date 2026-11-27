@@ -29,7 +29,9 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplateDesc, setNewTemplateDesc] = useState('');
   const [newTemplateIcon, setNewTemplateIcon] = useState('🛒');
-  const [newTemplateTag, setNewTemplateTag] = useState(locale === 'uk' ? 'Вихідні' : 'Weekend');
+  const [newTemplateTag, setNewTemplateTag] = useState(
+    locale === 'uk' ? 'Вихідні' : locale === 'ru' ? 'Выходные' : 'Weekend'
+  );
 
   const categoryMap = React.useMemo(() => {
     const map = new Map<string, Category>();
@@ -86,7 +88,9 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
     const defaultName =
       locale === 'uk'
         ? `Мій закуп (${new Date().toLocaleDateString('uk-UA', { month: 'short', day: 'numeric' })})`
-        : `My Weekend List (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`;
+        : locale === 'ru'
+          ? `Моя закупка (${new Date().toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' })})`
+          : `My Weekend List (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`;
 
     const templateName = prompt(t.promptTemplateName, defaultName);
     if (!templateName || !templateName.trim()) return;
@@ -96,9 +100,11 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
       description:
         locale === 'uk'
           ? `Збережено з активного кошика (${activeItems.length} позицій).`
-          : `Saved from active basket with ${activeItems.length} items.`,
+          : locale === 'ru'
+            ? `Сохранено из списка (${activeItems.length} позиций).`
+            : `Saved from active basket with ${activeItems.length} items.`,
       icon: '🛒',
-      tag: locale === 'uk' ? 'Власний' : 'Custom',
+      tag: locale === 'uk' ? 'Власний' : locale === 'ru' ? 'Свой' : 'Custom',
       items: activeItems.map((i) => ({
         title: i.title,
         categoryId: i.categoryId,
@@ -130,19 +136,19 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
           }))
         : [
             {
-              title: locale === 'uk' ? 'Органічне молоко' : 'Organic Milk',
+              title: locale === 'uk' ? 'Органічне молоко' : locale === 'ru' ? 'Молоко' : 'Organic Milk',
               categoryId: 'cat_dairy',
               quantity: 1,
               unit: 'gal',
             },
             {
-              title: locale === 'uk' ? 'Яйця курячі' : 'Eggs',
+              title: locale === 'uk' ? 'Яйця курячі' : locale === 'ru' ? 'Яйца куриные' : 'Eggs',
               categoryId: 'cat_dairy',
               quantity: 1,
               unit: 'dozen',
             },
             {
-              title: locale === 'uk' ? 'Свіжий хліб' : 'Fresh Bread',
+              title: locale === 'uk' ? 'Свіжий хліб' : locale === 'ru' ? 'Свежий хлеб' : 'Fresh Bread',
               categoryId: 'cat_bakery',
               quantity: 1,
               unit: 'loaf',
@@ -153,7 +159,11 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
       name: newTemplateName.trim(),
       description:
         newTemplateDesc.trim() ||
-        (locale === 'uk' ? 'Власний шаблон покупок' : 'Custom shopping template'),
+        (locale === 'uk'
+          ? 'Власний шаблон покупок'
+          : locale === 'ru'
+            ? 'Свой шаблон покупок'
+            : 'Custom shopping template'),
       icon: newTemplateIcon,
       tag: newTemplateTag,
       items,
@@ -193,6 +203,37 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
           name: 'Запаси та побутова хімія',
           description: 'Засоби для прання, паперові рушники, олія, паста, рис та томати.',
           tag: 'Місяць',
+        };
+      }
+    }
+    if (locale === 'ru') {
+      if (template.id === 'template_weekend_haul') {
+        return {
+          name: 'Большая субботняя закупка',
+          description:
+            'Недельное пополнение: овощи и фрукты, молочные продукты, яйца, мясо и бытовые товары.',
+          tag: 'Выходные',
+        };
+      }
+      if (template.id === 'template_weekday_basics') {
+        return {
+          name: 'Экспресс-набор на неделю',
+          description: 'Быстрый закуп среди недели: молоко, батон, масло, бананы и кофе.',
+          tag: 'Экспресс',
+        };
+      }
+      if (template.id === 'template_bbq_party') {
+        return {
+          name: 'Пикник и барбекю',
+          description: 'Бургеры, булочки, сыр, соусы, напитки, уголь и арбуз.',
+          tag: 'Пикник',
+        };
+      }
+      if (template.id === 'template_deep_pantry') {
+        return {
+          name: 'Запасы и бытовая химия',
+          description: 'Средства для стирки, бумажные полотенца, масло, паста, рис и томаты.',
+          tag: 'Месяц',
         };
       }
     }
@@ -266,7 +307,10 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
                         {locInfo.name}
                       </h3>
                       <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-0.5 tabular-nums">
-                        <span>{template.items.length} {locale === 'uk' ? 'поз.' : 'items'}</span>
+                        <span>
+                          {template.items.length}{' '}
+                          {locale === 'uk' ? 'поз.' : locale === 'ru' ? 'поз.' : 'items'}
+                        </span>
                         <span aria-hidden="true">·</span>
                         <span>{locInfo.tag}</span>
                         {totalEstCost > 0 && (
@@ -493,14 +537,20 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
             <form onSubmit={handleCreateTemplate} className="mt-4 space-y-4">
               <div>
                 <label className="block text-xs font-medium text-neutral-600 mb-1">
-                  {locale === 'uk' ? 'Назва шаблону' : 'Template Name'}
+                  {locale === 'uk'
+                    ? 'Назва шаблону'
+                    : locale === 'ru'
+                      ? 'Название шаблона'
+                      : 'Template Name'}
                 </label>
                 <input
                   type="text"
                   placeholder={
                     locale === 'uk'
                       ? 'напр. Недільний сніданок'
-                      : 'e.g. Sunday Family Brunch'
+                      : locale === 'ru'
+                        ? 'напр. Воскресный завтрак'
+                        : 'e.g. Sunday Family Brunch'
                   }
                   value={newTemplateName}
                   onChange={(e) => setNewTemplateName(e.target.value)}
@@ -511,12 +561,16 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-neutral-600 mb-1">
-                  {locale === 'uk' ? 'Опис' : 'Description'}
+                  {locale === 'uk' ? 'Опис' : locale === 'ru' ? 'Описание' : 'Description'}
                 </label>
                 <input
                   type="text"
                   placeholder={
-                    locale === 'uk' ? 'Короткий опис' : 'Brief description'
+                    locale === 'uk'
+                      ? 'Короткий опис'
+                      : locale === 'ru'
+                        ? 'Краткое описание'
+                        : 'Brief description'
                   }
                   value={newTemplateDesc}
                   onChange={(e) => setNewTemplateDesc(e.target.value)}
@@ -527,7 +581,7 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-neutral-600 mb-1">
-                    {locale === 'uk' ? 'Іконка' : 'Icon'}
+                    {locale === 'uk' ? 'Іконка' : locale === 'ru' ? 'Иконка' : 'Icon'}
                   </label>
                   <select
                     value={newTemplateIcon}
@@ -545,7 +599,7 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
 
                 <div>
                   <label className="block text-xs font-medium text-neutral-600 mb-1">
-                    {locale === 'uk' ? 'Тег' : 'Tag'}
+                    {locale === 'uk' ? 'Тег' : locale === 'ru' ? 'Тег' : 'Tag'}
                   </label>
                   <input
                     type="text"
@@ -559,7 +613,9 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
               <p className="text-xs text-neutral-500">
                 {locale === 'uk'
                   ? `У шаблон буде збережено поточні позиції (${currentItems.length}).`
-                  : `Saves your current items (${currentItems.length}) into this template.`}
+                  : locale === 'ru'
+                    ? `В шаблон будут сохранены текущие позиции (${currentItems.length}).`
+                    : `Saves your current items (${currentItems.length}) into this template.`}
               </p>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-100">
@@ -574,7 +630,11 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
                   type="submit"
                   className="px-4 py-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-medium"
                 >
-                  {locale === 'uk' ? 'Зберегти шаблон' : 'Save Template'}
+                  {locale === 'uk'
+                    ? 'Зберегти шаблон'
+                    : locale === 'ru'
+                      ? 'Сохранить шаблон'
+                      : 'Save Template'}
                 </button>
               </div>
             </form>

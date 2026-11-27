@@ -125,7 +125,7 @@ export const CategoryManagerModal: React.FC<CategoryManagerModalProps> = ({
               value={newCatColor}
               onChange={(e) => setNewCatColor(e.target.value)}
               className="w-8 h-8 rounded-lg border border-neutral-200 cursor-pointer p-0.5"
-              title={locale === 'uk' ? 'Колір' : 'Color'}
+              title={locale === 'uk' ? 'Колір' : locale === 'ru' ? 'Цвет' : 'Color'}
             />
 
             <button

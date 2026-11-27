@@ -19,10 +19,12 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [locale, setLocaleState] = useState<SupportedLocale>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === 'uk' || saved === 'en') return saved;
+      if (saved === 'uk' || saved === 'en' || saved === 'ru') return saved;
       // Autodetect browser language
-      if (typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('uk')) {
-        return 'uk';
+      if (typeof navigator !== 'undefined') {
+        const nav = navigator.language?.toLowerCase() || '';
+        if (nav.startsWith('uk')) return 'uk';
+        if (nav.startsWith('ru')) return 'ru';
       }
     } catch {
       // fallback

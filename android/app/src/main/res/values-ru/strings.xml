@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FamilyCart</string>
+    <string name="notification_channel_name">Напоминания о покупках</string>
+    <string name="notification_channel_desc">Умные напоминания о некупленных товарах для семьи</string>
+
+    <string name="notification_items_needed">%1$s (нужно: %2$d)</string>
+    <string name="notification_and_more">и ещё %1$d...</string>
+    <string name="notification_suppressed_log">Все товары куплены. Уведомление подавлено.</string>
+
+    <string name="title_shopping_list">Список покупок</string>
+    <string name="title_weekend_master">Мастер выходных</string>
+    <string name="title_smart_reminders">Умные напоминания</string>
+    <string name="title_settings">Настройки Firebase</string>
+
+    <string name="action_add_item">Добавить</string>
+    <string name="action_clear_completed">Очистить купленные</string>
+    <string name="action_apply_template">Загрузить в 1 клик</string>
+    <string name="action_merge">Объединить</string>
+    <string name="action_replace">Начать с нуля</string>
+    <string name="action_save">Сохранить</string>
+
+    <string name="cat_produce">Овощи и фрукты</string>
+    <string name="cat_dairy">Молочные продукты и яйца</string>
+    <string name="cat_bakery">Выпечка и хлеб</string>
+    <string name="cat_meat">Мясо и морепродукты</string>
+    <string name="cat_pantry">Бакалея и крупы</string>
+    <string name="cat_frozen">Замороженные продукты</string>
+    <string name="cat_household">Бытовая химия и дом</string>
+    <string name="cat_personal">Личная гигиена</string>
+</resources>

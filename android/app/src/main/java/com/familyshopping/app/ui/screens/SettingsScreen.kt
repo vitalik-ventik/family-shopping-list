@@ -4,6 +4,7 @@ import android.net.Uri
 import android.util.Base64
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +23,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -44,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familyshopping.app.R
 import com.familyshopping.app.data.model.FirebaseConfig
+import com.familyshopping.app.ui.AppStrings
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -54,6 +57,8 @@ import org.json.JSONObject
 @Composable
 fun SettingsScreen(
     currentConfig: FirebaseConfig,
+    currentLanguage: String,
+    onChangeLanguage: (String) -> Unit,
     onTestConfig: suspend (FirebaseConfig) -> Result<String>,
     onSaveConfig: (FirebaseConfig) -> Unit,
     onBack: () -> Unit
@@ -159,7 +164,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.title_settings), fontWeight = FontWeight.SemiBold) },
+                title = { Text(AppStrings.settingsTitle(currentLanguage), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -176,6 +181,39 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Language Selector Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F4F5)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = AppStrings.languageLabel(currentLanguage),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = Color(0xFF18181B)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "uk" to "Українська",
+                            "ru" to "Русский",
+                            "en" to "English"
+                        ).forEach { (code, label) ->
+                            FilterChip(
+                                selected = currentLanguage == code,
+                                onClick = { onChangeLanguage(code) },
+                                label = { Text(label, fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                }
+            }
+
             Button(
                 onClick = { startQrScan() },
                 modifier = Modifier.fillMaxWidth(),
@@ -184,7 +222,7 @@ fun SettingsScreen(
             ) {
                 Icon(Icons.Default.QrCodeScanner, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Scan QR from Web / Сканувати QR")
+                Text(AppStrings.scanQrLabel(currentLanguage))
             }
 
             Card(
@@ -193,13 +231,13 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        text = "Family Group Isolation",
+                        text = AppStrings.groupIsolationTitle(currentLanguage),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         color = Color(0xFF18181B)
                     )
                     Text(
-                        text = "Scan the QR code from the Web App or enter the same Firebase Project & Group ID manually to sync your family list in real time.",
+                        text = AppStrings.groupIsolationDesc(currentLanguage),
                         fontSize = 12.sp,
                         color = Color(0xFF52525B)
                     )
@@ -271,7 +309,7 @@ fun SettingsScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Test Connection")
+                Text(AppStrings.testConnectionBtn(currentLanguage))
             }
 
             Button(
@@ -279,14 +317,26 @@ fun SettingsScreen(
                     val newConfig = buildConfig()
                     onSaveConfig(newConfig)
                     isError = false
-                    statusMessage = if (newConfig.isConfigured) "Saved & connected!" else "Saved (Local Mode)"
+                    statusMessage = if (newConfig.isConfigured) {
+                        when (currentLanguage) {
+                            "ru" -> "Сохранено и подключено!"
+                            "en" -> "Saved & connected!"
+                            else -> "Збережено та підключено!"
+                        }
+                    } else {
+                        when (currentLanguage) {
+                            "ru" -> "Сохранено (Локальный режим)"
+                            "en" -> "Saved (Local Mode)"
+                            else -> "Збережено (Локальний режим)"
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF18181B))
             ) {
                 Icon(Icons.Default.Check, contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(stringResource(R.string.action_save))
+                Text(AppStrings.saveBtn(currentLanguage))
             }
 
             statusMessage?.let { msg ->

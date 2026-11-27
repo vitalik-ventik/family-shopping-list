@@ -26,10 +26,6 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { t, locale, setLocale } = useLanguage();
 
-  const toggleLanguage = () => {
-    setLocale(locale === 'uk' ? 'en' : 'uk');
-  };
-
   return (
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-neutral-200/80">
       <div className="max-w-5xl mx-auto px-4 sm:px-6">
@@ -119,15 +115,17 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="font-mono text-[11px]">{config.groupId || 'default'}</span>
             </button>
 
-            {/* Language Switcher */}
-            <button
-              type="button"
-              onClick={toggleLanguage}
-              title={locale === 'uk' ? 'Switch to English' : 'Перемкнути на українську'}
-              className="px-2 py-1 rounded-md text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-colors whitespace-nowrap"
+            {/* Language Selector */}
+            <select
+              value={locale}
+              onChange={(e) => setLocale(e.target.value as 'uk' | 'ru' | 'en')}
+              aria-label={t.languageLabel}
+              className="px-2 py-1 rounded-md text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 bg-transparent transition-colors cursor-pointer focus:outline-none"
             >
-              {locale === 'uk' ? 'UA' : 'EN'}
-            </button>
+              <option value="uk">UA</option>
+              <option value="ru">RU</option>
+              <option value="en">EN</option>
+            </select>
 
             {/* In-App PWA Install Button */}
             <PWAInstallButton />

@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
 
                     var schedules by remember { mutableStateOf(prefs.getSchedules()) }
                     var config by remember { mutableStateOf(prefs.getFirebaseConfig()) }
+                    var appLanguage by remember { mutableStateOf(prefs.getLanguage()) }
                     val scope = rememberCoroutineScope()
 
                     BackHandler(enabled = currentScreen != "list") {
@@ -79,6 +80,11 @@ class MainActivity : ComponentActivity() {
                             categories = categories,
                             recentItems = recentItems,
                             isConnected = isConnected,
+                            lang = appLanguage,
+                            onChangeLanguage = { newLang ->
+                                prefs.setLanguage(newLang)
+                                appLanguage = newLang
+                            },
                             onToggleItem = { item -> scope.launch { repository.toggleItem(item) } },
                             onCancelItem = { item -> scope.launch { repository.cancelItem(item) } },
                             onRestoreItem = { item -> scope.launch { repository.restoreItem(item) } },
@@ -104,6 +110,7 @@ class MainActivity : ComponentActivity() {
 
                         "templates" -> WeekendTemplateScreen(
                             templates = templates,
+                            lang = appLanguage,
                             onApplyTemplate = { tmpl, merge ->
                                 scope.launch {
                                     repository.applyWeekendTemplate(tmpl, merge)
@@ -116,6 +123,7 @@ class MainActivity : ComponentActivity() {
                         "notifications" -> NotificationScheduleScreen(
                             schedules = schedules,
                             categories = categories,
+                            lang = appLanguage,
                             onToggleSchedule = { sched ->
                                 ensureNotificationPermission()
                                 val updated = sched.copy(active = !sched.active)
@@ -138,6 +146,11 @@ class MainActivity : ComponentActivity() {
 
                         "settings" -> SettingsScreen(
                             currentConfig = config,
+                            currentLanguage = appLanguage,
+                            onChangeLanguage = { newLang ->
+                                prefs.setLanguage(newLang)
+                                appLanguage = newLang
+                            },
                             onTestConfig = { testCfg -> repository.testConnection(testCfg) },
                             onSaveConfig = { newConfig ->
                                 prefs.saveFirebaseConfig(newConfig)

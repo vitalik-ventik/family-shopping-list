@@ -28,7 +28,9 @@ export const OfflineIndicator: React.FC = () => {
       <span>
         {locale === 'uk'
           ? 'Офлайн-режим · Використовується локальний кеш'
-          : 'Offline · Using cached data'}
+          : locale === 'ru'
+            ? 'Офлайн-режим · Используется локальный кэш'
+            : 'Offline · Using cached data'}
       </span>
     </div>
   );

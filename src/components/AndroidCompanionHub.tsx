@@ -45,7 +45,7 @@ function formatSimTime(ts: number, locale: string): string {
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
-  const loc = locale === 'uk' ? 'uk-UA' : 'en-US';
+  const loc = locale === 'uk' ? 'uk-UA' : locale === 'ru' ? 'ru-RU' : 'en-US';
   const timeStr = date.toLocaleTimeString(loc, {
     hour: '2-digit',
     minute: '2-digit',
@@ -64,7 +64,7 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
   recentItems,
   config,
 }) => {
-  const { t, getCategoryName, getUnitName, locale } = useLanguage();
+  const { t, getCategoryName, getUnitName, locale, setLocale } = useLanguage();
 
   const [hubTab, setHubTab] = useState<'simulator' | 'code' | 'guide'>('simulator');
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
@@ -79,6 +79,13 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
   const [simNewCategoryId, setSimNewCategoryId] = useState(categories[0]?.id || 'cat_produce');
   const [simNewUrgent, setSimNewUrgent] = useState(false);
   const [simDropdownOpen, setSimDropdownOpen] = useState(true);
+  const [simPendingConfirm, setSimPendingConfirm] = useState<
+    | { type: 'cancel'; item: ShoppingItem }
+    | { type: 'delete'; item: ShoppingItem }
+    | { type: 'clearCompleted' }
+    | { type: 'clearCancelled' }
+    | null
+  >(null);
   const [simNotificationBanner, setSimNotificationBanner] = useState<{
     show: boolean;
     title: string;
@@ -109,25 +116,47 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
     }
   }, [simStatusFilter, simUrgentCount]);
 
-  const simFilteredItems = useMemo(() => {
-    const byCat =
-      simCategoryFilter === 'all'
-        ? items
-        : items.filter((i) => i.categoryId === simCategoryFilter);
-
+  const simItemsInStatus = useMemo(() => {
     switch (simStatusFilter) {
       case 'pending':
-        return byCat.filter((i) => !i.completed && !i.cancelled);
+        return items.filter((i) => !i.completed && !i.cancelled);
       case 'urgent':
-        return byCat.filter((i) => !i.completed && !i.cancelled && i.urgent);
+        return items.filter((i) => !i.completed && !i.cancelled && i.urgent);
       case 'completed':
-        return byCat.filter((i) => i.completed && !i.cancelled);
+        return items.filter((i) => i.completed && !i.cancelled);
       case 'cancelled':
-        return byCat.filter((i) => Boolean(i.cancelled));
+        return items.filter((i) => Boolean(i.cancelled));
       case 'all':
-        return byCat.filter((i) => !i.cancelled);
+        return items.filter((i) => !i.cancelled);
     }
-  }, [items, simCategoryFilter, simStatusFilter]);
+  }, [items, simStatusFilter]);
+
+  const simCategoryCountsInStatus = useMemo(() => {
+    const counts = new Map<string, number>();
+    simItemsInStatus.forEach((item) => {
+      counts.set(item.categoryId, (counts.get(item.categoryId) || 0) + 1);
+    });
+    return counts;
+  }, [simItemsInStatus]);
+
+  const simVisibleCategories = useMemo(
+    () => categories.filter((c) => (simCategoryCountsInStatus.get(c.id) || 0) > 0),
+    [categories, simCategoryCountsInStatus]
+  );
+
+  useEffect(() => {
+    if (
+      simCategoryFilter !== 'all' &&
+      (simCategoryCountsInStatus.get(simCategoryFilter) || 0) === 0
+    ) {
+      setSimCategoryFilter('all');
+    }
+  }, [simCategoryFilter, simCategoryCountsInStatus]);
+
+  const simFilteredItems = useMemo(() => {
+    if (simCategoryFilter === 'all') return simItemsInStatus;
+    return simItemsInStatus.filter((i) => i.categoryId === simCategoryFilter);
+  }, [simItemsInStatus, simCategoryFilter]);
 
   const simPendingTitles = useMemo(
     () => new Set(items.filter((i) => !i.completed && !i.cancelled).map((i) => i.title.trim().toLowerCase())),
@@ -300,7 +329,7 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                       <div>
                         <div className="font-semibold text-[11px]">{simNotificationBanner.title}</div>
                         <div className="text-[10px] text-neutral-400">
-                          WorkManager · {locale === 'uk' ? 'Щойно' : 'Just now'}
+                          WorkManager · {locale === 'uk' ? 'Щойно' : locale === 'ru' ? 'Только что' : 'Just now'}
                         </div>
                       </div>
                     </div>
@@ -336,10 +365,11 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                 <div className="bg-white px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
                   <div>
                     <h4 className="font-semibold text-xs text-neutral-900">
-                      {simScreen === 'list' && (locale === 'uk' ? 'Список покупок' : 'Family Shopping')}
-                      {simScreen === 'templates' && (locale === 'uk' ? 'Майстер вихідних' : 'Weekend Master')}
-                      {simScreen === 'notifications' && (locale === 'uk' ? 'Нагадування' : 'Reminders')}
-                      {simScreen === 'settings' && (locale === 'uk' ? 'Налаштування' : 'Settings')}
+                      {simScreen === 'list' && t.tabShoppingList}
+                      {simScreen === 'templates' && t.tabWeekendMaster}
+                      {simScreen === 'notifications' &&
+                        (locale === 'uk' ? 'Нагадування' : locale === 'ru' ? 'Напоминания' : 'Reminders')}
+                      {simScreen === 'settings' && t.tabSettings}
                     </h4>
                     <p className="text-[10px] text-neutral-400 font-mono">
                       {config.groupId || 'default-family'}
@@ -436,36 +466,41 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                         </button>
                       </div>
 
-                      {/* Category filter strip */}
-                      <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[10px]">
-                        <button
-                          type="button"
-                          onClick={() => setSimCategoryFilter('all')}
-                          className={`px-2 py-0.5 rounded-md font-medium shrink-0 ${
-                            simCategoryFilter === 'all'
-                              ? 'bg-neutral-200 text-neutral-900'
-                              : 'text-neutral-500 hover:bg-neutral-100'
-                          }`}
-                        >
-                          {t.allCategoriesChip}
-                        </button>
-                        {categories.map((cat) => (
+                      {/* Category filter strip (only categories present in selected section) */}
+                      {simVisibleCategories.length > 0 && (
+                        <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[10px]">
                           <button
-                            key={cat.id}
                             type="button"
-                            onClick={() =>
-                              setSimCategoryFilter(simCategoryFilter === cat.id ? 'all' : cat.id)
-                            }
+                            onClick={() => setSimCategoryFilter('all')}
                             className={`px-2 py-0.5 rounded-md font-medium shrink-0 ${
-                              simCategoryFilter === cat.id
+                              simCategoryFilter === 'all'
                                 ? 'bg-neutral-200 text-neutral-900'
                                 : 'text-neutral-500 hover:bg-neutral-100'
                             }`}
                           >
-                            {cat.icon} {getCategoryName(cat)}
+                            {t.allCategoriesChip}
                           </button>
-                        ))}
-                      </div>
+                          {simVisibleCategories.map((cat) => {
+                            const catCount = simCategoryCountsInStatus.get(cat.id) || 0;
+                            return (
+                              <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() =>
+                                  setSimCategoryFilter(simCategoryFilter === cat.id ? 'all' : cat.id)
+                                }
+                                className={`px-2 py-0.5 rounded-md font-medium shrink-0 tabular-nums ${
+                                  simCategoryFilter === cat.id
+                                    ? 'bg-neutral-200 text-neutral-900'
+                                    : 'text-neutral-500 hover:bg-neutral-100'
+                                }`}
+                              >
+                                {cat.icon} {getCategoryName(cat)} ({catCount})
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
 
                       {/* Clear header for completed / cancelled */}
                       {(simStatusFilter === 'completed' || simStatusFilter === 'all') &&
@@ -476,7 +511,7 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                             </span>
                             <button
                               type="button"
-                              onClick={() => firebaseService.clearCompletedItems()}
+                              onClick={() => setSimPendingConfirm({ type: 'clearCompleted' })}
                               className="text-rose-600 font-medium hover:underline"
                             >
                               {t.clearCompletedBtn(simCompletedCount)}
@@ -491,7 +526,7 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                           </span>
                           <button
                             type="button"
-                            onClick={() => firebaseService.clearCancelledItems()}
+                            onClick={() => setSimPendingConfirm({ type: 'clearCancelled' })}
                             className="text-rose-600 font-medium hover:underline"
                           >
                             {t.clearCancelledBtn(simCancelledCount)}
@@ -501,7 +536,11 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
 
                       {simFilteredItems.length === 0 ? (
                         <div className="bg-white rounded-lg border border-neutral-200 p-4 text-center text-[11px] text-neutral-400">
-                          {locale === 'uk' ? 'У цьому розділі порожньо' : 'No items in this view'}
+                          {locale === 'uk'
+                            ? 'У цьому розділі порожньо'
+                            : locale === 'ru'
+                              ? 'В этом разделе пусто'
+                              : 'No items in this view'}
                         </div>
                       ) : (
                         <div className="bg-white rounded-lg border border-neutral-200 divide-y divide-neutral-100">
@@ -583,7 +622,7 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        firebaseService.cancelItem(item.id);
+                                        setSimPendingConfirm({ type: 'cancel', item });
                                       }}
                                       className="p-1 text-amber-600 hover:bg-amber-50 rounded"
                                       title={t.cancelItemBtn}
@@ -595,7 +634,7 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      firebaseService.deleteItem(item.id);
+                                      setSimPendingConfirm({ type: 'delete', item });
                                     }}
                                     className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded"
                                     title={t.deleteItemBtn}
@@ -663,14 +702,42 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                   )}
 
                   {simScreen === 'settings' && (
-                    <div className="bg-white p-3 rounded-lg border border-neutral-200 space-y-1.5 text-[11px]">
-                      <div className="font-medium text-neutral-800">SharedPreferences</div>
-                      <div className="text-neutral-500">Group: {config.groupId || 'default'}</div>
-                      <div className="text-neutral-500">
-                        Project: {config.projectId || 'Demo'}
+                    <div className="space-y-2 text-[11px]">
+                      <div className="bg-white p-3 rounded-lg border border-neutral-200 space-y-2">
+                        <div className="font-medium text-neutral-800">{t.languageLabel}</div>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(
+                            [
+                              { code: 'uk', label: 'UA' },
+                              { code: 'ru', label: 'RU' },
+                              { code: 'en', label: 'EN' },
+                            ] as const
+                          ).map((opt) => (
+                            <button
+                              key={opt.code}
+                              type="button"
+                              onClick={() => setLocale(opt.code)}
+                              className={`py-1 rounded-md text-[10px] font-medium border transition-colors ${
+                                locale === opt.code
+                                  ? 'bg-neutral-900 border-neutral-900 text-white'
+                                  : 'bg-neutral-50 border-neutral-200 text-neutral-700'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="pt-2 text-[10px] text-neutral-400 tabular-nums">
-                        {t.brandName} · v{APP_VERSION}
+
+                      <div className="bg-white p-3 rounded-lg border border-neutral-200 space-y-1.5">
+                        <div className="font-medium text-neutral-800">SharedPreferences</div>
+                        <div className="text-neutral-500">Group: {config.groupId || 'default'}</div>
+                        <div className="text-neutral-500">
+                          Project: {config.projectId || 'Demo'}
+                        </div>
+                        <div className="pt-2 text-[10px] text-neutral-400 tabular-nums">
+                          {t.brandName} · v{APP_VERSION}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -826,6 +893,64 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                   </div>
                 )}
 
+                {/* Simulator Confirm Action Dialog overlay */}
+                {simPendingConfirm && (
+                  <div className="absolute inset-0 z-50 bg-neutral-950/45 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl w-full p-3.5 space-y-2.5 shadow-xl border border-neutral-200">
+                      <div className="text-xs font-semibold text-neutral-900">
+                        {simPendingConfirm.type === 'cancel' && t.cancelConfirmTitle}
+                        {simPendingConfirm.type === 'delete' && t.deleteConfirmTitle}
+                        {simPendingConfirm.type === 'clearCompleted' && t.clearCompletedBtn(simCompletedCount)}
+                        {simPendingConfirm.type === 'clearCancelled' && t.clearCancelledBtn(simCancelledCount)}
+                      </div>
+                      <p className="text-[11px] text-neutral-500 leading-snug">
+                        {simPendingConfirm.type === 'cancel' &&
+                          t.cancelConfirmDesc(simPendingConfirm.item.title)}
+                        {simPendingConfirm.type === 'delete' &&
+                          t.deleteConfirmDesc(simPendingConfirm.item.title)}
+                        {simPendingConfirm.type === 'clearCompleted' &&
+                          t.confirmClearCompleted(simCompletedCount)}
+                        {simPendingConfirm.type === 'clearCancelled' &&
+                          t.confirmClearCancelled(simCancelledCount)}
+                      </p>
+                      <div className="flex justify-end gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setSimPendingConfirm(null)}
+                          className="px-2.5 py-1 rounded-md text-[11px] text-neutral-600 hover:bg-neutral-100"
+                        >
+                          {t.cancelBtn}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const action = simPendingConfirm;
+                            setSimPendingConfirm(null);
+                            if (action.type === 'cancel') {
+                              await firebaseService.cancelItem(action.item.id);
+                            } else if (action.type === 'delete') {
+                              await firebaseService.deleteItem(action.item.id);
+                            } else if (action.type === 'clearCompleted') {
+                              await firebaseService.clearCompletedItems();
+                            } else if (action.type === 'clearCancelled') {
+                              await firebaseService.clearCancelledItems();
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-white text-[11px] font-medium ${
+                            simPendingConfirm.type === 'cancel'
+                              ? 'bg-amber-600 hover:bg-amber-700'
+                              : 'bg-rose-600 hover:bg-rose-700'
+                          }`}
+                        >
+                          {simPendingConfirm.type === 'cancel'
+                            ? t.confirmCancelActionBtn
+                            : t.confirmDeleteActionBtn}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Minimal Bottom Bar */}
                 <div className="bg-white border-t border-neutral-200 px-3 py-2 flex items-center justify-around text-[10px] text-neutral-500">
                   <button
@@ -833,21 +958,21 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                     onClick={() => setSimScreen('list')}
                     className={simScreen === 'list' ? 'text-neutral-900 font-semibold' : ''}
                   >
-                    {locale === 'uk' ? 'Список' : 'List'}
+                    {locale === 'uk' ? 'Список' : locale === 'ru' ? 'Список' : 'List'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setSimScreen('templates')}
                     className={simScreen === 'templates' ? 'text-neutral-900 font-semibold' : ''}
                   >
-                    {locale === 'uk' ? 'Шаблони' : 'Templates'}
+                    {locale === 'uk' ? 'Шаблони' : locale === 'ru' ? 'Шаблоны' : 'Templates'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setSimScreen('notifications')}
                     className={simScreen === 'notifications' ? 'text-neutral-900 font-semibold' : ''}
                   >
-                    {locale === 'uk' ? 'Сповіщення' : 'Alerts'}
+                    {locale === 'uk' ? 'Сповіщення' : locale === 'ru' ? 'Уведомления' : 'Alerts'}
                   </button>
                 </div>
               </div>
@@ -1003,46 +1128,54 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
             <h3 className="text-base font-semibold text-neutral-900">
               {locale === 'uk'
                 ? 'Запуск проекту в Android Studio'
-                : 'Setup Guide: Running in Android Studio'}
+                : locale === 'ru'
+                  ? 'Запуск проекта в Android Studio'
+                  : 'Setup Guide: Running in Android Studio'}
             </h3>
           </div>
 
           <div className="py-4 space-y-1">
             <div className="text-xs font-semibold text-neutral-900">
-              01. {locale === 'uk' ? 'Експорт проекту' : 'Export Project'}
+              01. {locale === 'uk' ? 'Експорт проекту' : locale === 'ru' ? 'Экспорт проекта' : 'Export Project'}
             </div>
             <p className="text-xs text-neutral-500">
               {locale === 'uk'
                 ? 'Завантажте ZIP-архів кнопкою вище та розпакуйте його у робочу директорію.'
-                : 'Download the ZIP archive above and extract it to your workspace directory.'}
+                : locale === 'ru'
+                  ? 'Скачайте ZIP-архив кнопкой выше и распакуйте его в рабочую папку.'
+                  : 'Download the ZIP archive above and extract it to your workspace directory.'}
             </p>
           </div>
 
           <div className="py-4 space-y-1">
             <div className="text-xs font-semibold text-neutral-900">
-              02. {locale === 'uk' ? 'Відкриття в Android Studio' : 'Open in Android Studio'}
+              02. {locale === 'uk' ? 'Відкриття в Android Studio' : locale === 'ru' ? 'Открытие в Android Studio' : 'Open in Android Studio'}
             </div>
             <p className="text-xs text-neutral-500">
               {locale === 'uk'
                 ? 'Виберіть File → Open та вкажіть папку проекту. Gradle автоматично встановить Compose, WorkManager і Firestore.'
-                : 'Select File → Open and choose the project folder. Gradle resolves Compose, WorkManager, and Firestore automatically.'}
+                : locale === 'ru'
+                  ? 'Выберите File → Open и укажите папку проекта. Gradle автоматически установит Compose, WorkManager и Firestore.'
+                  : 'Select File → Open and choose the project folder. Gradle resolves Compose, WorkManager, and Firestore automatically.'}
             </p>
           </div>
 
           <div className="py-4 space-y-1">
             <div className="text-xs font-semibold text-neutral-900">
-              03. {locale === 'uk' ? 'Підключення до сімейної групи' : 'Pair Family Group'}
+              03. {locale === 'uk' ? 'Підключення до сімейної групи' : locale === 'ru' ? 'Подключение к семейной группе' : 'Pair Family Group'}
             </div>
             <p className="text-xs text-neutral-500">
               {locale === 'uk'
                 ? 'Вкажіть параметри Firebase та ідентифікатор групи в налаштуваннях додатка або відскануйте QR-код.'
-                : 'Enter Firebase credentials and Group ID in Settings or scan the pairing QR code.'}
+                : locale === 'ru'
+                  ? 'Укажите параметры Firebase и ID группы в настройках приложения или отсканируйте QR-код.'
+                  : 'Enter Firebase credentials and Group ID in Settings or scan the pairing QR code.'}
             </p>
           </div>
 
           <div className="pt-4 space-y-2">
             <div className="text-xs font-semibold text-neutral-900">
-              04. {locale === 'uk' ? 'Тест WorkManager через ADB' : 'Test WorkManager via ADB'}
+              04. {locale === 'uk' ? 'Тест WorkManager через ADB' : locale === 'ru' ? 'Тест WorkManager через ADB' : 'Test WorkManager via ADB'}
             </div>
             <pre className="p-3 bg-neutral-950 rounded-lg font-mono text-xs text-neutral-300 overflow-x-auto">
               adb shell cmd jobscheduler run -f com.familyshopping.app [JOB_ID]

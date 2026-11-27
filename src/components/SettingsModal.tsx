@@ -26,7 +26,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   currentConfig,
 }) => {
-  const { t, locale } = useLanguage();
+  const { t, locale, setLocale } = useLanguage();
 
   const [apiKey, setApiKey] = useState(currentConfig.apiKey || '');
   const [projectId, setProjectId] = useState(currentConfig.projectId || '');
@@ -127,7 +127,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         message:
           locale === 'uk'
             ? 'Параметри Firebase розпізнано. Натисніть "Зберегти".'
-            : 'Extracted Firebase parameters. Click Save to apply.',
+            : locale === 'ru'
+              ? 'Параметры Firebase распознаны. Нажмите "Сохранить".'
+              : 'Extracted Firebase parameters. Click Save to apply.',
       });
     } catch {
       const extract = (key: string) => {
@@ -153,7 +155,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           message:
             locale === 'uk'
               ? 'Параметри розпізнано. Натисніть "Зберегти".'
-              : 'Parsed config parameters. Click Save to apply.',
+              : locale === 'ru'
+                ? 'Параметры распознаны. Нажмите "Сохранить".'
+                : 'Parsed config parameters. Click Save to apply.',
         });
       } else {
         setTestResult({
@@ -161,7 +165,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           message:
             locale === 'uk'
               ? 'Не вдалося розпізнати формат. Введіть поля вручну.'
-              : 'Could not auto-parse. Please enter fields manually.',
+              : locale === 'ru'
+                ? 'Не удалось распознать формат. Введите поля вручную.'
+                : 'Could not auto-parse. Please enter fields manually.',
         });
       }
     }
@@ -188,10 +194,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       message: res.success
         ? locale === 'uk'
           ? `Успішно підключено до Firestore (${res.latencyMs} мс)`
-          : res.message
+          : locale === 'ru'
+            ? `Успешно подключено к Firestore (${res.latencyMs} мс)`
+            : res.message
         : locale === 'uk'
-        ? `Помилка підключення: ${res.message}`
-        : res.message,
+          ? `Помилка підключення: ${res.message}`
+          : locale === 'ru'
+            ? `Ошибка подключения: ${res.message}`
+            : res.message,
       latencyMs: res.latencyMs,
     });
   };
@@ -237,6 +247,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Language Selector */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-neutral-700">{t.languageLabel}</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                { code: 'uk', label: 'Українська' },
+                { code: 'ru', label: 'Русский' },
+                { code: 'en', label: 'English' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.code}
+                type="button"
+                onClick={() => setLocale(opt.code)}
+                className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                  locale === opt.code
+                    ? 'border-neutral-900 bg-neutral-900 text-white'
+                    : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Mode Selector */}
