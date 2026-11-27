@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ShoppingItem, Category, RecentItem } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -17,6 +17,8 @@ import {
   SlidersHorizontal,
   Sparkles,
   History,
+  Ban,
+  RotateCcw,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -37,11 +39,11 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
   onOpenManageCategories,
   quickAddInputRef,
 }) => {
-  const { t, getCategoryName, getUnitName, getMemberName } = useLanguage();
+  const { t, getCategoryName, getUnitName, getMemberName, locale } = useLanguage();
 
   // Filters & State
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed' | 'urgent'>('pending');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed' | 'urgent' | 'cancelled'>('pending');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grouped' | 'list'>('grouped');
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
@@ -56,7 +58,31 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
   const [newPrice, setNewPrice] = useState<string>('');
   const [newAddedBy, setNewAddedBy] = useState('Me');
   const [isQuickAddExpanded, setIsQuickAddExpanded] = useState(false);
-  const [isTitleFocused, setIsTitleFocused] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const internalInputRef = useRef<HTMLInputElement | null>(null);
+
+  const setQuickInputRef = (el: HTMLInputElement | null) => {
+    internalInputRef.current = el;
+    if (quickAddInputRef) {
+      (quickAddInputRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownContainerRef.current &&
+        !dropdownContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsDropdownOpen(false);
+        setHighlightedIndex(-1);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Edit Item State
   const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null);
@@ -67,19 +93,30 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     return map;
   }, [categories]);
 
+  const pendingTitleSet = useMemo(() => {
+    return new Set(
+      items.filter((i) => !i.completed && !i.cancelled).map((i) => i.title.trim().toLowerCase())
+    );
+  }, [items]);
+
+  const uniqueItemsInUsageOrder = useMemo(() => {
+    const map = new Map<string, RecentItem>();
+    recentItems.forEach((r) => {
+      const key = r.title.trim().toLowerCase();
+      if (!key) return;
+      const existing = map.get(key);
+      if (!existing || (r.lastUsedAt || 0) > (existing.lastUsedAt || 0)) {
+        map.set(key, r);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0));
+  }, [recentItems]);
+
   const filteredRecentSuggestions = useMemo(() => {
     const q = newTitle.trim().toLowerCase();
-    const pendingTitles = new Set(
-      items.filter((i) => !i.completed).map((i) => i.title.trim().toLowerCase())
-    );
-    return recentItems
-      .filter((r) => {
-        const key = r.title.trim().toLowerCase();
-        if (q && !key.includes(q)) return false;
-        return !pendingTitles.has(key);
-      })
-      .slice(0, 10);
-  }, [recentItems, newTitle, items]);
+    if (!q) return uniqueItemsInUsageOrder;
+    return uniqueItemsInUsageOrder.filter((r) => r.title.trim().toLowerCase().includes(q));
+  }, [uniqueItemsInUsageOrder, newTitle]);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -93,9 +130,11 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
         if (!matchesTitle && !matchesNote && !matchesCat) return false;
       }
 
-      if (statusFilter === 'pending' && item.completed) return false;
-      if (statusFilter === 'completed' && !item.completed) return false;
-      if (statusFilter === 'urgent' && (!item.urgent || item.completed)) return false;
+      if (statusFilter === 'pending' && (item.completed || item.cancelled)) return false;
+      if (statusFilter === 'completed' && (!item.completed || item.cancelled)) return false;
+      if (statusFilter === 'urgent' && (!item.urgent || item.completed || item.cancelled)) return false;
+      if (statusFilter === 'cancelled' && !item.cancelled) return false;
+      if (statusFilter === 'all' && item.cancelled) return false;
 
       if (selectedCategoryFilter !== 'all' && item.categoryId !== selectedCategoryFilter) {
         return false;
@@ -105,14 +144,21 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     });
   }, [items, searchQuery, statusFilter, selectedCategoryFilter, categoryMap, getCategoryName]);
 
-  const totalItemsCount = items.length;
-  const uncompletedCount = items.filter((i) => !i.completed).length;
-  const completedCount = items.filter((i) => i.completed).length;
-  const urgentCount = items.filter((i) => !i.completed && i.urgent).length;
+  const totalItemsCount = items.filter((i) => !i.cancelled).length;
+  const uncompletedCount = items.filter((i) => !i.completed && !i.cancelled).length;
+  const completedCount = items.filter((i) => i.completed && !i.cancelled).length;
+  const cancelledCount = items.filter((i) => Boolean(i.cancelled)).length;
+  const urgentCount = items.filter((i) => !i.completed && !i.cancelled && i.urgent).length;
+
+  useEffect(() => {
+    if (statusFilter === 'urgent' && urgentCount === 0) {
+      setStatusFilter('pending');
+    }
+  }, [statusFilter, urgentCount]);
 
   const estimatedTotalCost = useMemo(() => {
     return items
-      .filter((i) => !i.completed && i.estimatedPrice)
+      .filter((i) => !i.completed && !i.cancelled && i.estimatedPrice)
       .reduce((sum, item) => sum + (item.estimatedPrice || 0) * (item.quantity || 1), 0);
   }, [items]);
 
@@ -180,6 +226,8 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     setNewPrice('');
     setNewUrgent(false);
     setIsQuickAddExpanded(false);
+    setIsDropdownOpen(false);
+    setHighlightedIndex(-1);
   };
 
   const handleQuickPickRecent = async (recent: RecentItem) => {
@@ -193,6 +241,40 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
       completed: false,
     });
     setNewTitle('');
+    setIsDropdownOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isDropdownOpen) {
+        setIsDropdownOpen(true);
+        setHighlightedIndex(filteredRecentSuggestions.length > 0 ? 0 : -1);
+      } else if (filteredRecentSuggestions.length > 0) {
+        setHighlightedIndex((prev) =>
+          prev < filteredRecentSuggestions.length - 1 ? prev + 1 : 0
+        );
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (isDropdownOpen && filteredRecentSuggestions.length > 0) {
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredRecentSuggestions.length - 1
+        );
+      }
+    } else if (e.key === 'Escape') {
+      setIsDropdownOpen(false);
+      setHighlightedIndex(-1);
+    } else if (
+      e.key === 'Enter' &&
+      isDropdownOpen &&
+      highlightedIndex >= 0 &&
+      filteredRecentSuggestions[highlightedIndex]
+    ) {
+      e.preventDefault();
+      handleQuickPickRecent(filteredRecentSuggestions[highlightedIndex]);
+    }
   };
 
   const handleClearCompleted = async () => {
@@ -202,8 +284,15 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     }
   };
 
+  const handleClearCancelled = async () => {
+    if (cancelledCount === 0) return;
+    if (window.confirm(t.confirmClearCancelled(cancelledCount))) {
+      await firebaseService.clearCancelledItems();
+    }
+  };
+
   const handleShareListAsText = () => {
-    const activeItems = items.filter((i) => !i.completed);
+    const activeItems = items.filter((i) => !i.completed && !i.cancelled);
     if (activeItems.length === 0) {
       alert(t.emptyListAlert);
       return;
@@ -286,16 +375,143 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
       <div className="bg-white rounded-xl border border-neutral-200 p-2.5 transition-all">
         <form onSubmit={handleAddItem} className="space-y-2.5">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <input
-              ref={quickAddInputRef}
-              type="text"
-              placeholder={t.quickAddPlaceholder}
-              value={newTitle}
-              onFocus={() => setIsTitleFocused(true)}
-              onBlur={() => setTimeout(() => setIsTitleFocused(false), 150)}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-lg bg-transparent text-neutral-900 placeholder-neutral-400 text-sm focus:outline-none focus:bg-neutral-50 transition-colors"
-            />
+            <div ref={dropdownContainerRef} className="relative flex-1">
+              <input
+                ref={setQuickInputRef}
+                type="text"
+                role="combobox"
+                aria-expanded={isDropdownOpen}
+                aria-autocomplete="list"
+                placeholder={t.quickAddPlaceholder}
+                value={newTitle}
+                onFocus={() => setIsDropdownOpen(true)}
+                onClick={() => setIsDropdownOpen(true)}
+                onKeyDown={handleTitleKeyDown}
+                onChange={(e) => {
+                  setNewTitle(e.target.value);
+                  setIsDropdownOpen(true);
+                  setHighlightedIndex(-1);
+                }}
+                className="w-full pl-3 pr-14 py-2 rounded-lg bg-neutral-50/70 hover:bg-neutral-50 focus:bg-white border border-transparent focus:border-neutral-300 text-neutral-900 placeholder-neutral-400 text-sm focus:outline-none transition-colors"
+              />
+
+              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                {newTitle.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewTitle('');
+                      setHighlightedIndex(-1);
+                      setIsDropdownOpen(true);
+                      internalInputRef.current?.focus();
+                    }}
+                    className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 transition-colors"
+                    aria-label="Clear"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isDropdownOpen;
+                    setIsDropdownOpen(next);
+                    if (next) {
+                      internalInputRef.current?.focus();
+                    }
+                  }}
+                  className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 transition-colors"
+                  aria-label="Toggle items list"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform ${
+                      isDropdownOpen ? 'rotate-180 text-neutral-700' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {isDropdownOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-white rounded-xl border border-neutral-200 shadow-lg overflow-hidden">
+                  <div className="px-3 py-2 border-b border-neutral-100 bg-neutral-50/70 flex items-center justify-between text-[11px] font-medium text-neutral-500">
+                    <span className="inline-flex items-center gap-1.5">
+                      <History className="w-3 h-3" />
+                      <span>{t.recentItemsLabel}</span>
+                    </span>
+                    <span className="tabular-nums text-neutral-400">
+                      {filteredRecentSuggestions.length}
+                    </span>
+                  </div>
+
+                  {filteredRecentSuggestions.length > 0 ? (
+                    <ul
+                      role="listbox"
+                      className="max-h-72 overflow-y-auto divide-y divide-neutral-100"
+                    >
+                      {filteredRecentSuggestions.map((recent, idx) => {
+                        const cat = categoryMap.get(recent.categoryId);
+                        const isAlreadyInList = pendingTitleSet.has(
+                          recent.title.trim().toLowerCase()
+                        );
+                        const isHighlighted = idx === highlightedIndex;
+                        return (
+                          <li
+                            key={recent.title.trim().toLowerCase()}
+                            role="option"
+                            aria-selected={isHighlighted}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleQuickPickRecent(recent);
+                            }}
+                            onMouseEnter={() => setHighlightedIndex(idx)}
+                            className={`group/item flex items-center justify-between gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                              isHighlighted ? 'bg-neutral-100' : 'hover:bg-neutral-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {cat && <span className="text-sm shrink-0">{cat.icon}</span>}
+                              <span className="text-sm font-medium text-neutral-900 truncate">
+                                {recent.title}
+                              </span>
+                              {(recent.quantity > 1 || recent.unit !== 'pcs') && (
+                                <span className="text-xs text-neutral-400 tabular-nums shrink-0">
+                                  {recent.quantity} {getUnitName(recent.unit)}
+                                </span>
+                              )}
+                              {isAlreadyInList && (
+                                <span className="text-[11px] text-emerald-600 font-medium shrink-0">
+                                  · {t.inListBadge}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                              <button
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  firebaseService.removeRecentItem(recent.title);
+                                }}
+                                title={t.removeFromHistoryLabel}
+                                className="p-1 rounded text-neutral-300 hover:text-rose-600 opacity-0 group-hover/item:opacity-100 focus:opacity-100 transition-opacity"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div className="px-3 py-3 text-xs text-neutral-400">
+                      {t.noMatchingHistoryHint}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
               <select
@@ -417,61 +633,12 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
             </div>
           )}
         </form>
-
-        {(isTitleFocused || newTitle.trim().length > 0) && filteredRecentSuggestions.length > 0 && (
-          <div className="mt-2 pt-2 px-1 border-t border-neutral-100">
-            <div className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-400 mb-1.5">
-              <History className="w-3 h-3" />
-              <span>{t.recentItemsLabel}</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {filteredRecentSuggestions.map((recent) => {
-                const cat = categoryMap.get(recent.categoryId);
-                return (
-                  <div
-                    key={recent.title}
-                    className="inline-flex items-center rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 hover:border-neutral-300 transition-colors"
-                  >
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        handleQuickPickRecent(recent);
-                      }}
-                      className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 text-xs font-medium text-neutral-800"
-                    >
-                      {cat && <span className="text-xs">{cat.icon}</span>}
-                      <span>{recent.title}</span>
-                      {(recent.quantity > 1 || recent.unit !== 'pcs') && (
-                        <span className="text-[11px] text-neutral-400 tabular-nums">
-                          {recent.quantity} {getUnitName(recent.unit)}
-                        </span>
-                      )}
-                      <Plus className="w-3 h-3 text-emerald-600 ml-0.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        firebaseService.removeRecentItem(recent.title);
-                      }}
-                      title="Remove from history"
-                      className="pr-2 pl-0.5 py-1 text-neutral-300 hover:text-neutral-600"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Filter & Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         {/* Segmented Status Filter */}
-        <div className="inline-flex items-center gap-1 p-1 bg-neutral-100 rounded-lg self-start">
+        <div className="inline-flex flex-wrap items-center gap-1 p-1 bg-neutral-100 rounded-lg self-start">
           <button
             type="button"
             onClick={() => setStatusFilter('pending')}
@@ -483,17 +650,19 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
           >
             {t.filterPending(uncompletedCount)}
           </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('urgent')}
-            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap tabular-nums ${
-              statusFilter === 'urgent'
-                ? 'bg-white text-rose-600 shadow-2xs'
-                : 'text-neutral-600 hover:text-rose-600'
-            }`}
-          >
-            {t.filterUrgent(urgentCount)}
-          </button>
+          {urgentCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter('urgent')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap tabular-nums ${
+                statusFilter === 'urgent'
+                  ? 'bg-white text-rose-600 shadow-2xs'
+                  : 'text-neutral-600 hover:text-rose-600'
+              }`}
+            >
+              {t.filterUrgent(urgentCount)}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setStatusFilter('completed')}
@@ -504,6 +673,17 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
             }`}
           >
             {t.filterCompleted(completedCount)}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('cancelled')}
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap tabular-nums ${
+              statusFilter === 'cancelled'
+                ? 'bg-white text-amber-700 shadow-2xs'
+                : 'text-neutral-600 hover:text-amber-700'
+            }`}
+          >
+            {t.filterCancelled(cancelledCount)}
           </button>
           <button
             type="button"
@@ -566,16 +746,28 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
             <Printer className="w-3.5 h-3.5" />
           </button>
 
-          {completedCount > 0 && (
+          {statusFilter === 'cancelled' && cancelledCount > 0 ? (
             <button
               type="button"
-              onClick={handleClearCompleted}
-              title={t.clearCompletedBtn(completedCount)}
+              onClick={handleClearCancelled}
+              title={t.clearCancelledBtn(cancelledCount)}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 text-neutral-600 text-xs font-medium whitespace-nowrap transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t.clearCompletedBtn(completedCount)}</span>
+              <span className="hidden sm:inline">{t.clearCancelledBtn(cancelledCount)}</span>
             </button>
+          ) : (
+            completedCount > 0 && (
+              <button
+                type="button"
+                onClick={handleClearCompleted}
+                title={t.clearCompletedBtn(completedCount)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 text-neutral-600 text-xs font-medium whitespace-nowrap transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{t.clearCompletedBtn(completedCount)}</span>
+              </button>
+            )
           )}
         </div>
       </div>
@@ -594,7 +786,7 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
           {t.allCategoriesChip}
         </button>
         {categories.map((c) => {
-          const count = items.filter((i) => !i.completed && i.categoryId === c.id).length;
+          const count = items.filter((i) => !i.completed && !i.cancelled && i.categoryId === c.id).length;
           if (count === 0 && selectedCategoryFilter !== c.id) return null;
           return (
             <button
@@ -643,7 +835,7 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
           {groupedByCategory.map(({ category, items: catItems }) => {
             if (catItems.length === 0) return null;
             const isCollapsed = collapsedCategories[category.id];
-            const pendingCatCount = catItems.filter((i) => !i.completed).length;
+            const pendingCatCount = catItems.filter((i) => !i.completed && !i.cancelled).length;
 
             return (
               <section key={category.id} className="space-y-2">
@@ -675,7 +867,10 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
                       <ItemRow
                         key={item.id}
                         item={item}
+                        locale={locale}
                         onToggle={() => handleToggleItem(item)}
+                        onCancel={() => firebaseService.cancelItem(item.id)}
+                        onRestore={() => firebaseService.restoreItem(item.id)}
                         onDelete={() => firebaseService.deleteItem(item.id)}
                         onEdit={() => setEditingItem(item)}
                       />
@@ -692,9 +887,12 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
             <ItemRow
               key={item.id}
               item={item}
+              locale={locale}
               category={categoryMap.get(item.categoryId)}
               showCategory
               onToggle={() => handleToggleItem(item)}
+              onCancel={() => firebaseService.cancelItem(item.id)}
+              onRestore={() => firebaseService.restoreItem(item.id)}
               onDelete={() => firebaseService.deleteItem(item.id)}
               onEdit={() => setEditingItem(item)}
             />
@@ -718,56 +916,97 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
   );
 };
 
+function formatShortTimestamp(ts: number, locale: string): string {
+  const date = new Date(ts);
+  const now = new Date();
+  const isSameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const loc = locale === 'uk' ? 'uk-UA' : 'en-US';
+  const timeStr = date.toLocaleTimeString(loc, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  if (isSameDay) return timeStr;
+
+  const dateStr = date.toLocaleDateString(loc, {
+    day: '2-digit',
+    month: '2-digit',
+  });
+  return `${dateStr} ${timeStr}`;
+}
+
 interface ItemRowProps {
   item: ShoppingItem;
+  locale: string;
   category?: Category;
   showCategory?: boolean;
   onToggle: () => void;
+  onCancel: () => void;
+  onRestore: () => void;
   onDelete: () => void;
   onEdit: () => void;
 }
 
 const ItemRow: React.FC<ItemRowProps> = ({
   item,
+  locale,
   category,
   showCategory,
   onToggle,
+  onCancel,
+  onRestore,
   onDelete,
   onEdit,
 }) => {
   const { t, getUnitName, getMemberName, getCategoryName } = useLanguage();
+  const isCancelled = Boolean(item.cancelled);
 
   return (
     <div
       className={`group flex items-center justify-between px-4 py-3 transition-colors ${
-        item.completed ? 'bg-neutral-50/50' : 'bg-white hover:bg-neutral-50/70'
+        isCancelled
+          ? 'bg-neutral-50/70'
+          : item.completed
+            ? 'bg-neutral-50/50'
+            : 'bg-white hover:bg-neutral-50/70'
       }`}
     >
       <div
         className="flex items-start sm:items-center gap-3.5 flex-1 min-w-0 pr-3 cursor-pointer"
-        onClick={onToggle}
+        onClick={isCancelled ? onRestore : onToggle}
       >
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            onToggle();
+            if (isCancelled) onRestore();
+            else onToggle();
           }}
           aria-label={item.title}
           className={`mt-0.5 sm:mt-0 w-4.5 h-4.5 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-            item.completed
-              ? 'bg-emerald-600 text-white'
-              : 'border border-neutral-300 hover:border-emerald-600 bg-white'
+            isCancelled
+              ? 'bg-amber-100 text-amber-700 border border-amber-200'
+              : item.completed
+                ? 'bg-emerald-600 text-white'
+                : 'border border-neutral-300 hover:border-emerald-600 bg-white'
           }`}
         >
-          {item.completed && <Check className="w-3 h-3 stroke-[3]" />}
+          {isCancelled ? (
+            <Ban className="w-3 h-3" />
+          ) : (
+            item.completed && <Check className="w-3 h-3 stroke-[3]" />
+          )}
         </button>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span
               className={`text-sm transition-colors ${
-                item.completed
+                isCancelled || item.completed
                   ? 'line-through text-neutral-400'
                   : 'font-medium text-neutral-900'
               }`}
@@ -775,7 +1014,13 @@ const ItemRow: React.FC<ItemRowProps> = ({
               {item.title}
             </span>
 
-            {item.urgent && !item.completed && (
+            {isCancelled && (
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-700">
+                {localeLabelUrgent(t.cancelledBadge)}
+              </span>
+            )}
+
+            {item.urgent && !item.completed && !isCancelled && (
               <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-rose-600">
                 <Flame className="w-3 h-3" />
                 <span>{localeLabelUrgent(t.urgentBadge)}</span>
@@ -784,63 +1029,114 @@ const ItemRow: React.FC<ItemRowProps> = ({
           </div>
 
           {/* Unboxed clean metadata line with middot separators */}
-          {(item.quantity > 1 ||
-            item.unit !== 'pcs' ||
-            item.note ||
-            item.addedBy ||
-            item.estimatedPrice ||
-            (showCategory && category)) && (
-            <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-0.5 flex-wrap tabular-nums">
-              {(item.quantity > 1 || item.unit !== 'pcs') && (
-                <span className="text-neutral-600 font-medium">
-                  {item.quantity} {getUnitName(item.unit)}
+          <div className="flex items-center gap-1.5 text-xs text-neutral-400 mt-0.5 flex-wrap tabular-nums">
+            {(item.quantity > 1 || item.unit !== 'pcs') && (
+              <span className="text-neutral-600 font-medium">
+                {item.quantity} {getUnitName(item.unit)}
+              </span>
+            )}
+
+            {showCategory && category && (
+              <>
+                {(item.quantity > 1 || item.unit !== 'pcs') && <span aria-hidden="true">·</span>}
+                <span>{getCategoryName(category)}</span>
+              </>
+            )}
+
+            {item.estimatedPrice && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>~{(item.estimatedPrice * (item.quantity || 1)).toFixed(2)}</span>
+              </>
+            )}
+
+            {item.note && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="truncate max-w-xs">{item.note}</span>
+              </>
+            )}
+
+            {item.addedBy && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{getMemberName(item.addedBy)}</span>
+              </>
+            )}
+
+            {item.createdAt > 0 && (
+              <>
+                {(item.quantity > 1 ||
+                  item.unit !== 'pcs' ||
+                  (showCategory && category) ||
+                  item.estimatedPrice ||
+                  item.note ||
+                  item.addedBy) && <span aria-hidden="true">·</span>}
+                <span>{t.addedAtLabel(formatShortTimestamp(item.createdAt, locale))}</span>
+              </>
+            )}
+
+            {item.completed && item.completedAt && !isCancelled && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-emerald-600 font-medium">
+                  {t.boughtAtLabel(formatShortTimestamp(item.completedAt, locale))}
                 </span>
-              )}
+              </>
+            )}
 
-              {showCategory && category && (
-                <>
-                  {(item.quantity > 1 || item.unit !== 'pcs') && <span aria-hidden="true">·</span>}
-                  <span>{getCategoryName(category)}</span>
-                </>
-              )}
-
-              {item.estimatedPrice && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>~{(item.estimatedPrice * (item.quantity || 1)).toFixed(2)}</span>
-                </>
-              )}
-
-              {item.note && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="truncate max-w-xs">{item.note}</span>
-                </>
-              )}
-
-              {item.addedBy && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>{getMemberName(item.addedBy)}</span>
-                </>
-              )}
-            </div>
-          )}
+            {isCancelled && item.cancelledAt && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-amber-700 font-medium">
+                  {t.cancelledAtLabel(formatShortTimestamp(item.cancelledAt, locale))}
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100 transition-colors"
-          title={t.editItemTitle}
-        >
-          <Edit3 className="w-3.5 h-3.5" />
-        </button>
+      <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        {isCancelled ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRestore();
+            }}
+            className="p-1.5 rounded-md text-neutral-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+            title={t.restoreItemBtn}
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100 transition-colors"
+              title={t.editItemTitle}
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancel();
+              }}
+              className="p-1.5 rounded-md text-neutral-400 hover:text-amber-700 hover:bg-amber-50 transition-colors"
+              title={t.cancelItemBtn}
+            >
+              <Ban className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
 
         <button
           type="button"
@@ -849,7 +1145,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
             onDelete();
           }}
           className="p-1.5 rounded-md text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-          title="Delete"
+          title={t.deleteItemBtn}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>

@@ -59,6 +59,14 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val appVersion = remember(context) {
+        try {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.1.0"
+        } catch (_: Exception) {
+            "1.1.0"
+        }
+    }
     var apiKey by remember { mutableStateOf(currentConfig.apiKey) }
     var projectId by remember { mutableStateOf(currentConfig.projectId) }
     var appId by remember { mutableStateOf(currentConfig.appId) }
@@ -289,6 +297,13 @@ fun SettingsScreen(
                     fontSize = 13.sp
                 )
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "${stringResource(R.string.app_name)} · v$appVersion",
+                fontSize = 12.sp,
+                color = Color(0xFF71717A)
+            )
         }
     }
 }

@@ -36,6 +36,7 @@ export interface TranslationSchema {
   filterPending: (count: number) => string;
   filterUrgent: (count: number) => string;
   filterCompleted: (count: number) => string;
+  filterCancelled: (count: number) => string;
   filterAll: (count: number) => string;
   viewByCategory: string;
   viewFlatList: string;
@@ -44,6 +45,7 @@ export interface TranslationSchema {
   itemsNeededSummary: (count: number) => string;
   estTotalSummary: (total: string) => string;
   clearCompletedBtn: (count: number) => string;
+  clearCancelledBtn: (count: number) => string;
   copyTextBtn: string;
   printBtn: string;
   emptyListTitle: string;
@@ -53,8 +55,16 @@ export interface TranslationSchema {
   loadWeekendHaulQuick: string;
   neededInCat: (pending: number, total: number) => string;
   confirmClearCompleted: (count: number) => string;
+  confirmClearCancelled: (count: number) => string;
   copiedToClipboardAlert: string;
   emptyListAlert: string;
+  addedAtLabel: (time: string) => string;
+  boughtAtLabel: (time: string) => string;
+  cancelledAtLabel: (time: string) => string;
+  cancelItemBtn: string;
+  restoreItemBtn: string;
+  deleteItemBtn: string;
+  cancelledBadge: string;
 
   // Edit Modal
   editItemTitle: string;
@@ -156,6 +166,9 @@ export interface TranslationSchema {
   qrNeedsConfigHint: string;
   qrImportedNotice: (groupId: string) => string;
   recentItemsLabel: string;
+  inListBadge: string;
+  noMatchingHistoryHint: string;
+  removeFromHistoryLabel: string;
 
   // Category Manager
   categoriesModalTitle: string;
@@ -197,7 +210,7 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     weekendBannerDesc: 'Stock up for the weekend in seconds. Replenish milk, eggs, bread, chicken, fresh produce, and essentials with one tap.',
     weekendBannerBtn: 'Launch Weekend Master',
 
-    quickAddPlaceholder: 'Add shopping item... (e.g. Sourdough bread, Avocados, Dishwasher pods)',
+    quickAddPlaceholder: 'Add item...',
     urgentLabel: 'Mark as Urgent',
     urgentBadge: 'URGENT',
     moreDetailsBtn: 'More details',
@@ -209,6 +222,7 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     filterPending: (count) => `Pending (${count})`,
     filterUrgent: (count) => `Urgent (${count})`,
     filterCompleted: (count) => `Completed (${count})`,
+    filterCancelled: (count) => `Cancelled (${count})`,
     filterAll: (count) => `All (${count})`,
     viewByCategory: '📁 By Category',
     viewFlatList: '📋 Flat List',
@@ -217,6 +231,7 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     itemsNeededSummary: (count) => `${count} items needed`,
     estTotalSummary: (total) => `Est. Total: $${total}`,
     clearCompletedBtn: (count) => `Clear ${count} Done`,
+    clearCancelledBtn: (count) => `Clear ${count} Cancelled`,
     copyTextBtn: 'Copy Text',
     printBtn: 'Print',
     emptyListTitle: 'Your shopping list is all clear!',
@@ -226,8 +241,16 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     loadWeekendHaulQuick: '⚡ Load Weekend Haul',
     neededInCat: (pending, total) => `${pending} needed ${total > pending ? `(${total} total)` : ''}`,
     confirmClearCompleted: (count) => `Clear all ${count} completed items?`,
+    confirmClearCancelled: (count) => `Permanently delete all ${count} cancelled items?`,
     copiedToClipboardAlert: 'Shopping list copied to clipboard formatted for WhatsApp / Message!',
     emptyListAlert: 'Shopping list is currently empty!',
+    addedAtLabel: (time) => `Added ${time}`,
+    boughtAtLabel: (time) => `Bought ${time}`,
+    cancelledAtLabel: (time) => `Cancelled ${time}`,
+    cancelItemBtn: 'Cancel item',
+    restoreItemBtn: 'Restore to list',
+    deleteItemBtn: 'Delete permanently',
+    cancelledBadge: 'CANCELLED',
 
     editItemTitle: 'Edit Shopping Item',
     itemTitleLabel: 'Item Title',
@@ -329,7 +352,10 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     copiedLinkBtn: 'Link Copied',
     qrNeedsConfigHint: 'Configure Firebase in Settings first so the QR code includes real sync credentials.',
     qrImportedNotice: (groupId) => `Connected via QR link to group "${groupId}"`,
-    recentItemsLabel: 'Recent items (click to add)',
+    recentItemsLabel: 'All items by usage',
+    inListBadge: 'in list',
+    noMatchingHistoryHint: 'No matches in history — press Enter or Add to create',
+    removeFromHistoryLabel: 'Remove from history',
 
     categoryNames: {
       cat_produce: 'Produce',
@@ -388,7 +414,7 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     weekendBannerDesc: 'Закупіться на вихідні за лічені секунди. Додайте молоко, яйця, хліб, м\'ясо, свіжі овочі та побутові товари одним дотиком.',
     weekendBannerBtn: 'Відкрити Майстер вихідних',
 
-    quickAddPlaceholder: 'Додати товар... (наприклад: Крафтовий хліб, Авокадо, Капсули для прання)',
+    quickAddPlaceholder: 'Додати товар...',
     urgentLabel: 'Позначити як ТЕРМІНОВО',
     urgentBadge: 'ТЕРМІНОВО',
     moreDetailsBtn: 'Більше деталей',
@@ -400,6 +426,7 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     filterPending: (count) => `До покупки (${count})`,
     filterUrgent: (count) => `Термінові (${count})`,
     filterCompleted: (count) => `Куплено (${count})`,
+    filterCancelled: (count) => `Відмінені (${count})`,
     filterAll: (count) => `Всі (${count})`,
     viewByCategory: '📁 За категоріями',
     viewFlatList: '📋 Простий список',
@@ -408,6 +435,7 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     itemsNeededSummary: (count) => `Потрібно купити: ${count}`,
     estTotalSummary: (total) => `Орієнтовна сума: ₴${total}`,
     clearCompletedBtn: (count) => `Очистити ${count} куплених`,
+    clearCancelledBtn: (count) => `Видалити ${count} відмінених`,
     copyTextBtn: 'Скопіювати текст',
     printBtn: 'Друк списку',
     emptyListTitle: 'Ваш список покупок порожній!',
@@ -417,8 +445,16 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     loadWeekendHaulQuick: '⚡ Завантажити закуп на вихідні',
     neededInCat: (pending, total) => `Треба: ${pending} ${total > pending ? `(всього: ${total})` : ''}`,
     confirmClearCompleted: (count) => `Видалити всі ${count} куплених товарів зі списку?`,
+    confirmClearCancelled: (count) => `Видалити назавжди всі ${count} відмінених товарів?`,
     copiedToClipboardAlert: 'Список покупок скопійовано у буфер обміну для надсилання у Viber / Telegram / WhatsApp!',
     emptyListAlert: 'Список покупок наразі порожній!',
+    addedAtLabel: (time) => `Додано ${time}`,
+    boughtAtLabel: (time) => `Куплено ${time}`,
+    cancelledAtLabel: (time) => `Відмінено ${time}`,
+    cancelItemBtn: 'Відмінити позицію',
+    restoreItemBtn: 'Повернути у список',
+    deleteItemBtn: 'Видалити назавжди',
+    cancelledBadge: 'ВІДМІНЕНО',
 
     editItemTitle: 'Редагувати товар',
     itemTitleLabel: 'Назва товару',
@@ -520,7 +556,10 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     copiedLinkBtn: 'Скопійовано!',
     qrNeedsConfigHint: 'Спочатку вкажіть ключі Firebase у Налаштуваннях, щоб QR-код містив реальне підключення.',
     qrImportedNotice: (groupId) => `Підключено за QR-посиланням до групи «${groupId}»`,
-    recentItemsLabel: 'Останні додані (натисніть, щоб додати)',
+    recentItemsLabel: 'Товари за порядком використання',
+    inListBadge: 'у списку',
+    noMatchingHistoryHint: 'Немає в історії — натисніть Enter або Додати',
+    removeFromHistoryLabel: 'Видалити з історії',
 
     categoryNames: {
       cat_produce: 'Овочі та фрукти',

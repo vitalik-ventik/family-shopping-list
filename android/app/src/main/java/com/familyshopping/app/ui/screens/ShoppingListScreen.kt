@@ -1,16 +1,16 @@
 package com.familyshopping.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,7 +22,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Delete
@@ -35,6 +40,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,12 +64,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import com.familyshopping.app.R
 import com.familyshopping.app.data.model.Category
 import com.familyshopping.app.data.model.RecentItem
 import com.familyshopping.app.data.model.ShoppingItem
+
+private enum class AndroidStatusFilter {
+    PENDING,
+    URGENT,
+    COMPLETED,
+    CANCELLED,
+    ALL
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,24 +92,46 @@ fun ShoppingListScreen(
     recentItems: List<RecentItem>,
     isConnected: Boolean,
     onToggleItem: (ShoppingItem) -> Unit,
+    onCancelItem: (ShoppingItem) -> Unit,
+    onRestoreItem: (ShoppingItem) -> Unit,
     onAddItem: (String, String, Int, String, Boolean) -> Unit,
     onDeleteItem: (String) -> Unit,
     onClearCompleted: () -> Unit,
+    onClearCancelled: () -> Unit,
     onOpenWeekendTemplate: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
+    var statusFilter by remember { mutableStateOf(AndroidStatusFilter.PENDING) }
     var selectedCategoryFilter by remember { mutableStateOf<String?>(null) }
+    val isUk = remember { Locale.getDefault().language != "en" }
 
-    val filteredItems = if (selectedCategoryFilter == null) {
+    val pendingCount = items.count { !it.completed && !it.cancelled }
+    val urgentCount = items.count { !it.completed && !it.cancelled && it.urgent }
+    val completedCount = items.count { it.completed && !it.cancelled }
+    val cancelledCount = items.count { it.cancelled }
+    val allNonCancelledCount = items.count { !it.cancelled }
+
+    LaunchedEffect(urgentCount, statusFilter) {
+        if (statusFilter == AndroidStatusFilter.URGENT && urgentCount == 0) {
+            statusFilter = AndroidStatusFilter.PENDING
+        }
+    }
+
+    val categoryFilteredItems = if (selectedCategoryFilter == null) {
         items
     } else {
         items.filter { it.categoryId == selectedCategoryFilter }
     }
 
-    val uncompletedItems = filteredItems.filter { !it.completed }
-    val completedItems = filteredItems.filter { it.completed }
+    val displayedItems = when (statusFilter) {
+        AndroidStatusFilter.PENDING -> categoryFilteredItems.filter { !it.completed && !it.cancelled }
+        AndroidStatusFilter.URGENT -> categoryFilteredItems.filter { !it.completed && !it.cancelled && it.urgent }
+        AndroidStatusFilter.COMPLETED -> categoryFilteredItems.filter { it.completed && !it.cancelled }
+        AndroidStatusFilter.CANCELLED -> categoryFilteredItems.filter { it.cancelled }
+        AndroidStatusFilter.ALL -> categoryFilteredItems.filter { !it.cancelled }
+    }
     val categoryMap = remember(categories) { categories.associateBy { it.id } }
 
     Scaffold(
@@ -103,8 +145,11 @@ fun ShoppingListScreen(
                             fontSize = 18.sp
                         )
                         Text(
-                            text = "${items.count { !it.completed }} active • " +
-                                if (isConnected) "Firebase Sync" else "Local Mode",
+                            text = if (isUk) {
+                                "$pendingCount до покупки • " + if (isConnected) "Firestore" else "Локально"
+                            } else {
+                                "$pendingCount active • " + if (isConnected) "Firebase Sync" else "Local Mode"
+                            },
                             fontSize = 12.sp,
                             color = if (isConnected) Color(0xFF059669) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -186,12 +231,84 @@ fun ShoppingListScreen(
                 }
             }
 
+            // Status Filter Tabs (Default: Pending / До покупки)
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, bottom = 2.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    FilterChip(
+                        selected = statusFilter == AndroidStatusFilter.PENDING,
+                        onClick = { statusFilter = AndroidStatusFilter.PENDING },
+                        label = {
+                            Text(
+                                if (isUk) "До покупки ($pendingCount)" else "Pending ($pendingCount)",
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                }
+                if (urgentCount > 0) {
+                    item {
+                        FilterChip(
+                            selected = statusFilter == AndroidStatusFilter.URGENT,
+                            onClick = { statusFilter = AndroidStatusFilter.URGENT },
+                            label = {
+                                Text(
+                                    if (isUk) "Термінові ($urgentCount)" else "Urgent ($urgentCount)",
+                                    fontSize = 12.sp
+                                )
+                            }
+                        )
+                    }
+                }
+                item {
+                    FilterChip(
+                        selected = statusFilter == AndroidStatusFilter.COMPLETED,
+                        onClick = { statusFilter = AndroidStatusFilter.COMPLETED },
+                        label = {
+                            Text(
+                                if (isUk) "Куплено ($completedCount)" else "Done ($completedCount)",
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = statusFilter == AndroidStatusFilter.CANCELLED,
+                        onClick = { statusFilter = AndroidStatusFilter.CANCELLED },
+                        label = {
+                            Text(
+                                if (isUk) "Відмінені ($cancelledCount)" else "Cancelled ($cancelledCount)",
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = statusFilter == AndroidStatusFilter.ALL,
+                        onClick = { statusFilter = AndroidStatusFilter.ALL },
+                        label = {
+                            Text(
+                                if (isUk) "Всі ($allNonCancelledCount)" else "All ($allNonCancelledCount)",
+                                fontSize = 12.sp
+                            )
+                        }
+                    )
+                }
+            }
+
             // Category Filter Chips
             if (categories.isNotEmpty()) {
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                        .padding(vertical = 2.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -199,7 +316,12 @@ fun ShoppingListScreen(
                         FilterChip(
                             selected = selectedCategoryFilter == null,
                             onClick = { selectedCategoryFilter = null },
-                            label = { Text("All (${items.count { !it.completed }})", fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    if (isUk) "Усі категорії" else "All categories",
+                                    fontSize = 12.sp
+                                )
+                            }
                         )
                     }
                     items(categories, key = { it.id }) { cat ->
@@ -222,47 +344,98 @@ fun ShoppingListScreen(
                 contentPadding = PaddingValues(top = 6.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(uncompletedItems, key = { it.id }) { item ->
-                    val cat = categoryMap[item.categoryId]
-                    ShoppingItemRow(
-                        item = item,
-                        categoryLabel = cat?.let { "${it.icon} ${it.name}" } ?: "",
-                        onToggle = { onToggleItem(item) },
-                        onDelete = { onDeleteItem(item.id) }
-                    )
-                }
-
-                if (completedItems.isNotEmpty()) {
+                if ((statusFilter == AndroidStatusFilter.COMPLETED || statusFilter == AndroidStatusFilter.ALL) && completedCount > 0) {
                     item {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 12.dp, bottom = 2.dp),
+                                .padding(top = 2.dp, bottom = 2.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Done (${completedItems.size})",
+                                text = if (isUk) "Куплено: $completedCount" else "Done: $completedCount",
                                 fontWeight = FontWeight.Medium,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             TextButton(onClick = onClearCompleted) {
                                 Text(
-                                    text = stringResource(R.string.action_clear_completed),
+                                    text = if (isUk) "Очистити куплені" else stringResource(R.string.action_clear_completed),
                                     color = MaterialTheme.colorScheme.error,
                                     fontSize = 12.sp
                                 )
                             }
                         }
                     }
+                }
 
-                    items(completedItems, key = { it.id }) { item ->
+                if (statusFilter == AndroidStatusFilter.CANCELLED && cancelledCount > 0) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 2.dp, bottom = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isUk) "Відмінені: $cancelledCount" else "Cancelled: $cancelledCount",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp,
+                                color = Color(0xFFB45309)
+                            )
+                            TextButton(onClick = onClearCancelled) {
+                                Text(
+                                    text = if (isUk) "Видалити відмінені" else "Clear Cancelled",
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (displayedItems.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 20.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = when (statusFilter) {
+                                        AndroidStatusFilter.PENDING -> if (isUk) "Усе куплено! Список порожній" else "Nothing left to buy!"
+                                        AndroidStatusFilter.URGENT -> if (isUk) "Термінових товарів немає" else "No urgent items"
+                                        AndroidStatusFilter.COMPLETED -> if (isUk) "Ще немає куплених товарів" else "No completed items yet"
+                                        AndroidStatusFilter.CANCELLED -> if (isUk) "Відмінених товарів немає" else "No cancelled items"
+                                        AndroidStatusFilter.ALL -> if (isUk) "Список порожній" else "List is empty"
+                                    },
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF71717A)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(displayedItems, key = { it.id }) { item ->
                         val cat = categoryMap[item.categoryId]
                         ShoppingItemRow(
                             item = item,
+                            isUk = isUk,
                             categoryLabel = cat?.let { "${it.icon} ${it.name}" } ?: "",
                             onToggle = { onToggleItem(item) },
+                            onCancel = { onCancelItem(item) },
+                            onRestore = { onRestoreItem(item) },
                             onDelete = { onDeleteItem(item.id) }
                         )
                     }
@@ -273,11 +446,12 @@ fun ShoppingListScreen(
 
     if (showAddDialog) {
         val pendingTitles = remember(items) {
-            items.filter { !it.completed }.map { it.title.trim().lowercase() }.toSet()
+            items.filter { !it.completed && !it.cancelled }.map { it.title.trim().lowercase(Locale.getDefault()) }.toSet()
         }
         AddItemDialog(
             categories = categories,
-            recentItems = recentItems.filter { it.title.trim().lowercase() !in pendingTitles },
+            recentItems = recentItems,
+            pendingTitles = pendingTitles,
             defaultCategoryId = selectedCategoryFilter ?: categories.firstOrNull()?.id ?: "cat_produce",
             onDismiss = { showAddDialog = false },
             onConfirm = { title, catId, qty, unit, urgent ->
@@ -288,36 +462,59 @@ fun ShoppingListScreen(
     }
 }
 
+private fun formatAndroidTimestamp(ts: Long): String {
+    val itemCal = Calendar.getInstance().apply { timeInMillis = ts }
+    val nowCal = Calendar.getInstance()
+    val sameDay = itemCal.get(Calendar.YEAR) == nowCal.get(Calendar.YEAR) &&
+        itemCal.get(Calendar.DAY_OF_YEAR) == nowCal.get(Calendar.DAY_OF_YEAR)
+    val pattern = if (sameDay) "HH:mm" else "dd.MM HH:mm"
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(ts))
+}
+
 @Composable
 fun ShoppingItemRow(
     item: ShoppingItem,
+    isUk: Boolean,
     categoryLabel: String,
     onToggle: () -> Unit,
+    onCancel: () -> Unit,
+    onRestore: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onToggle() },
+            .clickable { if (item.cancelled) onRestore() else onToggle() },
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.completed) Color(0xFFF4F4F5) else Color.White
+            containerColor = if (item.completed || item.cancelled) Color(0xFFF4F4F5) else Color.White
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (item.completed) 0.dp else 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (item.completed || item.cancelled) 0.dp else 1.dp)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(checked = item.completed, onCheckedChange = { onToggle() })
+            if (item.cancelled) {
+                IconButton(onClick = onRestore, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Restore",
+                        tint = Color(0xFF059669),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            } else {
+                Checkbox(checked = item.completed, onCheckedChange = { onToggle() })
+            }
             Spacer(modifier = Modifier.width(6.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.title,
                     fontWeight = FontWeight.Medium,
                     fontSize = 15.sp,
-                    textDecoration = if (item.completed) TextDecoration.LineThrough else TextDecoration.None,
-                    color = if (item.completed) Color(0xFF71717A) else Color(0xFF18181B)
+                    textDecoration = if (item.completed || item.cancelled) TextDecoration.LineThrough else TextDecoration.None,
+                    color = if (item.completed || item.cancelled) Color(0xFF71717A) else Color(0xFF18181B)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (item.quantity > 0 || item.unit.isNotBlank()) {
@@ -335,8 +532,36 @@ fun ShoppingItemRow(
                         )
                     }
                 }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    if (item.createdAt > 0L) {
+                        Text(
+                            text = (if (isUk) "Додано " else "Added ") + formatAndroidTimestamp(item.createdAt),
+                            fontSize = 11.sp,
+                            color = Color(0xFF71717A)
+                        )
+                    }
+                    if (item.completed && !item.cancelled && item.completedAt != null) {
+                        Text(
+                            text = (if (isUk) "• Куплено " else "• Bought ") + formatAndroidTimestamp(item.completedAt),
+                            fontSize = 11.sp,
+                            color = Color(0xFF059669),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    if (item.cancelled && item.cancelledAt != null) {
+                        Text(
+                            text = (if (isUk) "• Відмінено " else "• Cancelled ") + formatAndroidTimestamp(item.cancelledAt),
+                            fontSize = 11.sp,
+                            color = Color(0xFFB45309),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
-            if (item.urgent && !item.completed) {
+            if (item.urgent && !item.completed && !item.cancelled) {
                 Surface(
                     color = Color(0xFFFFE4E6),
                     shape = RoundedCornerShape(6.dp)
@@ -347,6 +572,16 @@ fun ShoppingItemRow(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFE11D48)
+                    )
+                }
+            }
+            if (!item.cancelled) {
+                IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Block,
+                        contentDescription = "Cancel",
+                        tint = Color(0xFFD97706),
+                        modifier = Modifier.size(17.dp)
                     )
                 }
             }
@@ -362,24 +597,40 @@ fun ShoppingItemRow(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AddItemDialog(
     categories: List<Category>,
     recentItems: List<RecentItem>,
+    pendingTitles: Set<String>,
     defaultCategoryId: String,
     onDismiss: () -> Unit,
     onConfirm: (String, String, Int, String, Boolean) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
+    var dropdownExpanded by remember { mutableStateOf(true) }
     var selectedCategoryId by remember { mutableStateOf(defaultCategoryId) }
     var quantity by remember { mutableIntStateOf(1) }
     var unit by remember { mutableStateOf("pcs") }
     var urgent by remember { mutableStateOf(false) }
 
-    val filteredRecent = remember(recentItems, title) {
-        val q = title.trim().lowercase()
-        recentItems.filter { q.isEmpty() || it.title.lowercase().contains(q) }.take(8)
+    val isUk = remember { Locale.getDefault().language != "en" }
+    val categoryMap = remember(categories) { categories.associateBy { it.id } }
+
+    val uniqueOrderedItems = remember(recentItems) {
+        val map = linkedMapOf<String, RecentItem>()
+        recentItems.sortedByDescending { it.lastUsedAt }.forEach { item ->
+            val key = item.title.trim().lowercase(Locale.getDefault())
+            if (key.isNotEmpty() && !map.containsKey(key)) {
+                map[key] = item
+            }
+        }
+        map.values.toList()
+    }
+
+    val filteredRecent = remember(uniqueOrderedItems, title) {
+        val q = title.trim().lowercase(Locale.getDefault())
+        if (q.isEmpty()) uniqueOrderedItems
+        else uniqueOrderedItems.filter { it.title.lowercase(Locale.getDefault()).contains(q) }
     }
 
     AlertDialog(
@@ -392,38 +643,128 @@ private fun AddItemDialog(
             ) {
                 OutlinedTextField(
                     value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Item name") },
+                    onValueChange = {
+                        title = it
+                        dropdownExpanded = true
+                    },
+                    label = { Text(if (isUk) "Додати товар..." else "Add item...") },
                     singleLine = true,
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (title.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        title = ""
+                                        dropdownExpanded = true
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Clear",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = { dropdownExpanded = !dropdownExpanded },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    if (dropdownExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Toggle list"
+                                )
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                if (filteredRecent.isNotEmpty()) {
-                    Text(
-                        text = "Recent (tap to add):",
-                        fontSize = 11.sp,
-                        color = Color(0xFF71717A),
-                        fontWeight = FontWeight.Medium
-                    )
-                    FlowRow(
+                if (dropdownExpanded && filteredRecent.isNotEmpty()) {
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, Color(0xFFE4E4E7)),
+                        shadowElevation = 2.dp
                     ) {
-                        filteredRecent.forEach { recent ->
-                            FilterChip(
-                                selected = false,
-                                onClick = {
-                                    onConfirm(
-                                        recent.title,
-                                        recent.categoryId,
-                                        recent.quantity,
-                                        recent.unit,
-                                        false
-                                    )
+                        Column {
+                            Text(
+                                text = if (isUk) {
+                                    "За порядком використання (${filteredRecent.size})"
+                                } else {
+                                    "By usage order (${filteredRecent.size})"
                                 },
-                                label = { Text("+ ${recent.title}", fontSize = 11.sp) }
+                                fontSize = 11.sp,
+                                color = Color(0xFF71717A),
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
+                            HorizontalDivider(color = Color(0xFFF4F4F5))
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp)
+                            ) {
+                                items(
+                                    filteredRecent,
+                                    key = { it.title.trim().lowercase(Locale.getDefault()) }
+                                ) { recent ->
+                                    val cat = categoryMap[recent.categoryId]
+                                    val inList = recent.title.trim().lowercase(Locale.getDefault()) in pendingTitles
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onConfirm(
+                                                    recent.title,
+                                                    recent.categoryId,
+                                                    recent.quantity,
+                                                    recent.unit,
+                                                    false
+                                                )
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (cat != null) {
+                                            Text(cat.icon, fontSize = 14.sp)
+                                        }
+                                        Text(
+                                            text = recent.title,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF18181B),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (recent.quantity > 1 || recent.unit != "pcs") {
+                                            Text(
+                                                text = "${recent.quantity} ${recent.unit}",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF71717A)
+                                            )
+                                        }
+                                        if (inList) {
+                                            Text(
+                                                text = if (isUk) "у списку" else "in list",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF059669),
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = null,
+                                            tint = Color(0xFF059669),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    HorizontalDivider(color = Color(0xFFF4F4F5))
+                                }
+                            }
                         }
                     }
                 }

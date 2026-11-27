@@ -80,6 +80,8 @@ class MainActivity : ComponentActivity() {
                             recentItems = recentItems,
                             isConnected = isConnected,
                             onToggleItem = { item -> scope.launch { repository.toggleItem(item) } },
+                            onCancelItem = { item -> scope.launch { repository.cancelItem(item) } },
+                            onRestoreItem = { item -> scope.launch { repository.restoreItem(item) } },
                             onAddItem = { title, catId, qty, unit, urgent ->
                                 val newItem = ShoppingItem(
                                     id = "item_${System.currentTimeMillis()}",
@@ -94,6 +96,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onDeleteItem = { id -> scope.launch { repository.deleteItem(id) } },
                             onClearCompleted = { scope.launch { repository.clearCompletedItems() } },
+                            onClearCancelled = { scope.launch { repository.clearCancelledItems() } },
                             onOpenWeekendTemplate = { currentScreen = "templates" },
                             onOpenNotifications = { currentScreen = "notifications" },
                             onOpenSettings = { currentScreen = "settings" }

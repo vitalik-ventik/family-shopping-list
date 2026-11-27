@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle translucent basket fill -->
+    <path
+        android:fillColor="#1AFFFFFF"
+        android:pathData="M38,44 L77,44 L71,65 L41,65 Z" />
+
+    <!-- Shopping Cart Outline -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M28,36 L34,36 L41,65 L71,65 L77,44 L38,44"
+        android:strokeWidth="4.6"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Emerald Checkmark Inside Basket -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M49,54 L54,59 L65,48"
+        android:strokeWidth="4.4"
+        android:strokeColor="#34D399"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Left Wheel -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M44,74m-4.2,0a4.2,4.2 0,1 1,8.4 0a4.2,4.2 0,1 1,-8.4 0" />
+    <path
+        android:fillColor="#111827"
+        android:pathData="M44,74m-1.5,0a1.5,1.5 0,1 1,3 0a1.5,1.5 0,1 1,-3 0" />
+
+    <!-- Right Wheel -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M68,74m-4.2,0a4.2,4.2 0,1 1,8.4 0a4.2,4.2 0,1 1,-8.4 0" />
+    <path
+        android:fillColor="#111827"
+        android:pathData="M68,74m-1.5,0a1.5,1.5 0,1 1,3 0a1.5,1.5 0,1 1,-3 0" />
+
+    <!-- Warm Amber Sync Sparkle -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M76,29 L77.6,33.4 L82,35 L77.6,36.6 L76,41 L74.4,36.6 L70,35 L74.4,33.4 Z" />
+</vector>

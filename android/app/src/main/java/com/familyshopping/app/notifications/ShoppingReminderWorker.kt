@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.familyshopping.app.MainActivity
+import com.familyshopping.app.R
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.firestore.FirebaseFirestore
@@ -82,8 +83,9 @@ class ShoppingReminderWorker(
                 .get()
                 .await()
 
-            // 4. Filter uncompleted items by the monitored categories
+            // 4. Filter uncompleted (and non-cancelled) items by the monitored categories
             val matchingItems = itemsSnapshot.documents.mapNotNull { doc ->
+                if (doc.getBoolean("cancelled") == true) return@mapNotNull null
                 val title = doc.getString("title") ?: return@mapNotNull null
                 val catId = doc.getString("categoryId") ?: ""
                 val quantity = doc.getDouble("quantity")?.toInt() ?: 1
@@ -154,7 +156,7 @@ class ShoppingReminderWorker(
         }
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_stat_shopping)
             .setContentTitle(contentTitle)
             .setContentText(summaryText)
             .setStyle(inboxStyle)

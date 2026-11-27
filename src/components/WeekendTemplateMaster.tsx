@@ -77,7 +77,7 @@ export const WeekendTemplateMaster: React.FC<WeekendTemplateMasterProps> = ({
   };
 
   const handleSnapshotCurrentList = async () => {
-    const activeItems = currentItems.filter((i) => !i.completed);
+    const activeItems = currentItems.filter((i) => !i.completed && !i.cancelled);
     if (activeItems.length === 0) {
       alert(t.noActiveItemsToSave);
       return;

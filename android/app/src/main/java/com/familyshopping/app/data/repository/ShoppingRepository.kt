@@ -13,6 +13,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -90,7 +91,7 @@ class ShoppingRepository(private val context: Context) {
         val groupRef = firestore.collection("family_groups").document(groupId)
 
         itemsListener = groupRef.collection("items")
-            .orderBy("createdAt")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e("ShoppingRepository", "Items listen failed", error)
@@ -170,13 +171,26 @@ class ShoppingRepository(private val context: Context) {
     }
 
     suspend fun toggleItem(item: ShoppingItem) {
+        _recentItems.value = prefs.recordRecentItem(
+            RecentItem(
+                title = item.title,
+                categoryId = item.categoryId,
+                quantity = item.quantity,
+                unit = item.unit,
+                lastUsedAt = System.currentTimeMillis()
+            )
+        )
         val firestore = firestoreInstance
+        val newCompleted = !item.completed
+        val newCompletedAt = if (newCompleted) System.currentTimeMillis() else null
         if (firestore == null) {
             _items.value = _items.value.map {
                 if (it.id == item.id) {
                     it.copy(
-                        completed = !it.completed,
-                        completedAt = if (!it.completed) System.currentTimeMillis() else null
+                        completed = newCompleted,
+                        completedAt = newCompletedAt,
+                        cancelled = false,
+                        cancelledAt = null
                     )
                 } else it
             }
@@ -189,8 +203,66 @@ class ShoppingRepository(private val context: Context) {
             .document(item.id)
             .update(
                 mapOf(
-                    "completed" to !item.completed,
-                    "completedAt" to if (!item.completed) System.currentTimeMillis() else null
+                    "completed" to newCompleted,
+                    "completedAt" to newCompletedAt,
+                    "cancelled" to false,
+                    "cancelledAt" to null
+                )
+            )
+            .await()
+    }
+
+    suspend fun cancelItem(item: ShoppingItem) {
+        val now = System.currentTimeMillis()
+        val firestore = firestoreInstance
+        if (firestore == null) {
+            _items.value = _items.value.map {
+                if (it.id == item.id) {
+                    it.copy(
+                        cancelled = true,
+                        cancelledAt = now,
+                        completed = false,
+                        completedAt = null
+                    )
+                } else it
+            }
+            return
+        }
+        val groupId = prefs.getFirebaseConfig().groupId.ifBlank { "default-family" }
+        firestore.collection("family_groups")
+            .document(groupId)
+            .collection("items")
+            .document(item.id)
+            .update(
+                mapOf(
+                    "cancelled" to true,
+                    "cancelledAt" to now,
+                    "completed" to false,
+                    "completedAt" to null
+                )
+            )
+            .await()
+    }
+
+    suspend fun restoreItem(item: ShoppingItem) {
+        val firestore = firestoreInstance
+        if (firestore == null) {
+            _items.value = _items.value.map {
+                if (it.id == item.id) {
+                    it.copy(cancelled = false, cancelledAt = null)
+                } else it
+            }
+            return
+        }
+        val groupId = prefs.getFirebaseConfig().groupId.ifBlank { "default-family" }
+        firestore.collection("family_groups")
+            .document(groupId)
+            .collection("items")
+            .document(item.id)
+            .update(
+                mapOf(
+                    "cancelled" to false,
+                    "cancelledAt" to null
                 )
             )
             .await()
@@ -220,25 +292,50 @@ class ShoppingRepository(private val context: Context) {
     }
 
     private fun mergeRecentFromItems(items: List<ShoppingItem>) {
-        val current = _recentItems.value
-        val existingKeys = current.map { it.title.trim().lowercase(Locale.getDefault()) }.toMutableSet()
-        val additions = mutableListOf<RecentItem>()
+        val byKey = linkedMapOf<String, RecentItem>()
+        _recentItems.value.forEach { existing ->
+            val key = existing.title.trim().lowercase(Locale.getDefault())
+            if (key.isNotEmpty()) {
+                val prev = byKey[key]
+                if (prev == null || existing.lastUsedAt > prev.lastUsedAt) {
+                    byKey[key] = existing.copy(title = existing.title.trim())
+                }
+            }
+        }
+
+        var changed = false
         items.forEach { item ->
-            val key = item.title.trim().lowercase(Locale.getDefault())
-            if (key.isNotEmpty() && existingKeys.add(key)) {
-                additions.add(
-                    RecentItem(
-                        title = item.title.trim(),
+            val cleanTitle = item.title.trim()
+            val key = cleanTitle.lowercase(Locale.getDefault())
+            if (key.isNotEmpty()) {
+                val usedAt = maxOf(item.completedAt ?: 0L, item.createdAt)
+                val existing = byKey[key]
+                if (existing == null) {
+                    byKey[key] = RecentItem(
+                        title = cleanTitle,
                         categoryId = item.categoryId,
                         quantity = item.quantity,
                         unit = item.unit,
-                        lastUsedAt = item.createdAt
+                        lastUsedAt = usedAt
                     )
-                )
+                    changed = true
+                } else if (usedAt > existing.lastUsedAt) {
+                    byKey[key] = existing.copy(
+                        title = cleanTitle,
+                        categoryId = item.categoryId.ifBlank { existing.categoryId },
+                        quantity = item.quantity.coerceAtLeast(1),
+                        unit = item.unit.ifBlank { existing.unit },
+                        lastUsedAt = usedAt
+                    )
+                    changed = true
+                }
             }
         }
-        if (additions.isNotEmpty()) {
-            val merged = (current + additions).take(30)
+
+        if (changed) {
+            val merged = byKey.values
+                .sortedByDescending { it.lastUsedAt }
+                .take(500)
             prefs.saveRecentItems(merged)
             _recentItems.value = merged
         }
@@ -262,7 +359,7 @@ class ShoppingRepository(private val context: Context) {
     suspend fun clearCompletedItems() {
         val firestore = firestoreInstance
         if (firestore == null) {
-            _items.value = _items.value.filterNot { it.completed }
+            _items.value = _items.value.filterNot { it.completed && !it.cancelled }
             return
         }
         val groupId = prefs.getFirebaseConfig().groupId.ifBlank { "default-family" }
@@ -274,7 +371,28 @@ class ShoppingRepository(private val context: Context) {
             .await()
 
         val batch = firestore.batch()
-        completed.documents.forEach { batch.delete(it.reference) }
+        completed.documents
+            .filter { it.getBoolean("cancelled") != true }
+            .forEach { batch.delete(it.reference) }
+        batch.commit().await()
+    }
+
+    suspend fun clearCancelledItems() {
+        val firestore = firestoreInstance
+        if (firestore == null) {
+            _items.value = _items.value.filterNot { it.cancelled }
+            return
+        }
+        val groupId = prefs.getFirebaseConfig().groupId.ifBlank { "default-family" }
+        val cancelled = firestore.collection("family_groups")
+            .document(groupId)
+            .collection("items")
+            .whereEqualTo("cancelled", true)
+            .get()
+            .await()
+
+        val batch = firestore.batch()
+        cancelled.documents.forEach { batch.delete(it.reference) }
         batch.commit().await()
     }
 
@@ -293,6 +411,18 @@ class ShoppingRepository(private val context: Context) {
                 completed = false,
                 createdAt = now + index * 10L,
                 addedBy = "Template"
+            )
+        }
+
+        newItems.forEach { ni ->
+            _recentItems.value = prefs.recordRecentItem(
+                RecentItem(
+                    title = ni.title,
+                    categoryId = ni.categoryId,
+                    quantity = ni.quantity,
+                    unit = ni.unit,
+                    lastUsedAt = ni.createdAt
+                )
             )
         }
 
@@ -318,7 +448,7 @@ class ShoppingRepository(private val context: Context) {
         batch.commit().await()
     }
 
-    private fun isUk(): Boolean = Locale.getDefault().language == "uk"
+    private fun isUk(): Boolean = Locale.getDefault().language != "en"
 
     private fun defaultCategories(): List<Category> {
         val uk = isUk()

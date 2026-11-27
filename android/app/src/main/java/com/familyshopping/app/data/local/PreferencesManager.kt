@@ -163,7 +163,7 @@ class PreferencesManager(context: Context) {
                     )
                 }
             }
-            result
+            result.sortedByDescending { it.lastUsedAt }
         } catch (e: Exception) {
             defaultRecentItems()
         }
@@ -171,7 +171,7 @@ class PreferencesManager(context: Context) {
 
     fun saveRecentItems(items: List<RecentItem>) {
         val array = JSONArray()
-        items.take(30).forEach { item ->
+        items.sortedByDescending { it.lastUsedAt }.take(500).forEach { item ->
             val obj = JSONObject().apply {
                 put("title", item.title)
                 put("categoryId", item.categoryId)
@@ -188,15 +188,16 @@ class PreferencesManager(context: Context) {
         val cleanTitle = entry.title.trim()
         if (cleanTitle.isEmpty()) return getRecentItems()
         val key = cleanTitle.lowercase(Locale.getDefault())
-        val updated = listOf(entry.copy(title = cleanTitle, lastUsedAt = System.currentTimeMillis())) +
-            getRecentItems().filter { it.title.trim().lowercase(Locale.getDefault()) != key }
-        val capped = updated.take(30)
-        saveRecentItems(capped)
-        return capped
+        val updated = (listOf(entry.copy(title = cleanTitle)) +
+            getRecentItems().filter { it.title.trim().lowercase(Locale.getDefault()) != key })
+            .sortedByDescending { it.lastUsedAt }
+            .take(500)
+        saveRecentItems(updated)
+        return updated
     }
 
     private fun defaultRecentItems(): List<RecentItem> {
-        val uk = Locale.getDefault().language == "uk"
+        val uk = Locale.getDefault().language != "en"
         return if (uk) {
             listOf(
                 RecentItem("Молоко 2.5%", "cat_dairy", 1, "л"),

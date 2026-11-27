@@ -18,6 +18,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { CategoryManagerModal } from './components/CategoryManagerModal';
 import { ShareModal } from './components/ShareModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { APP_VERSION } from './constants/version';
 
 function MainApp() {
   const { t } = useLanguage();
@@ -83,8 +84,8 @@ function MainApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab]);
 
-  const pendingCount = items.filter((i) => !i.completed).length;
-  const completedCount = items.filter((i) => i.completed).length;
+  const pendingCount = items.filter((i) => !i.completed && !i.cancelled).length;
+  const completedCount = items.filter((i) => i.completed && !i.cancelled).length;
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col selection:bg-emerald-100 selection:text-emerald-900">
@@ -150,6 +151,7 @@ function MainApp() {
             categories={categories}
             templates={templates}
             schedules={schedules}
+            recentItems={recentItems}
             config={config}
           />
         )}
@@ -157,7 +159,7 @@ function MainApp() {
 
       <footer className="border-t border-neutral-200/80 bg-white/60 py-4 text-xs text-neutral-400">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>{t.brandName}</span>
+          <span className="tabular-nums">{t.brandName} · v{APP_VERSION}</span>
           <div className="flex items-center gap-4">
             <button
               type="button"

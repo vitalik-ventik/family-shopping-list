@@ -3,6 +3,7 @@ import { FirebaseConfig, SyncStatus } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { useLanguage } from '../i18n/LanguageContext';
 import { buildPairingUrl } from '../utils/pairing';
+import { APP_VERSION } from '../constants/version';
 import QRCode from 'qrcode';
 import {
   Check,
@@ -223,7 +224,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="bg-white rounded-xl max-w-xl w-full p-6 shadow-xl border border-neutral-200 my-8 space-y-5">
         <div className="flex items-start justify-between pb-3 border-b border-neutral-100">
           <div>
-            <h3 className="font-semibold text-neutral-900 text-base">{t.settingsTitle}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-neutral-900 text-base">{t.settingsTitle}</h3>
+              <span className="text-[11px] font-mono text-neutral-400">v{APP_VERSION}</span>
+            </div>
             <p className="text-xs text-neutral-500 mt-0.5">{t.settingsSubtitle}</p>
           </div>
           <button

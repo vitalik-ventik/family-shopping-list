@@ -11,6 +11,7 @@ import {
   orderBy,
   Firestore,
   writeBatch,
+  deleteField,
 } from 'firebase/firestore';
 import {
   FirebaseConfig,
@@ -163,16 +164,13 @@ class FirebaseSyncManager {
 
       const recentJson = localStorage.getItem(LOCAL_RECENT_ITEMS_KEY);
       if (recentJson) {
-        this.cachedRecentItems = JSON.parse(recentJson);
+        this.cachedRecentItems = (JSON.parse(recentJson) as RecentItem[]).sort(
+          (a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0)
+        );
       } else {
-        this.cachedRecentItems = this.cachedItems.slice(0, 20).map((item, idx) => ({
-          title: item.title,
-          categoryId: item.categoryId,
-          quantity: item.quantity || 1,
-          unit: item.unit || 'pcs',
-          lastUsedAt: item.createdAt || Date.now() - idx * 1000,
-        }));
+        this.cachedRecentItems = [];
       }
+      this.mergeRecentItemsFromList(this.cachedItems);
     } catch {
       this.cachedItems = INITIAL_ITEMS;
       this.cachedCategories = DEFAULT_CATEGORIES;
@@ -429,13 +427,16 @@ class FirebaseSyncManager {
   private recordRecentItem(entry: RecentItem) {
     const normalized = entry.title.trim().toLowerCase();
     if (!normalized) return;
+    const timestamp = entry.lastUsedAt || Date.now();
     const filtered = this.cachedRecentItems.filter(
       (r) => r.title.trim().toLowerCase() !== normalized
     );
     this.cachedRecentItems = [
-      { ...entry, title: entry.title.trim(), lastUsedAt: Date.now() },
+      { ...entry, title: entry.title.trim(), lastUsedAt: timestamp },
       ...filtered,
-    ].slice(0, 30);
+    ]
+      .sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0))
+      .slice(0, 500);
     try {
       localStorage.setItem(LOCAL_RECENT_ITEMS_KEY, JSON.stringify(this.cachedRecentItems));
     } catch {
@@ -445,27 +446,52 @@ class FirebaseSyncManager {
   }
 
   private mergeRecentItemsFromList(items: ShoppingItem[]) {
-    const existingKeys = new Set(
-      this.cachedRecentItems.map((r) => r.title.trim().toLowerCase())
-    );
+    const byKey = new Map<string, RecentItem>();
+    this.cachedRecentItems.forEach((r) => {
+      const key = r.title.trim().toLowerCase();
+      if (!key) return;
+      const prev = byKey.get(key);
+      if (!prev || (r.lastUsedAt || 0) > (prev.lastUsedAt || 0)) {
+        byKey.set(key, { ...r, title: r.title.trim() });
+      }
+    });
+
     let changed = false;
-    const additions: RecentItem[] = [];
     items.forEach((item) => {
       const key = item.title.trim().toLowerCase();
-      if (key && !existingKeys.has(key)) {
-        existingKeys.add(key);
-        additions.push({
+      if (!key) return;
+      const itemUsedAt = Math.max(item.completedAt || 0, item.createdAt || 0) || Date.now();
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, {
           title: item.title.trim(),
           categoryId: item.categoryId,
           quantity: item.quantity || 1,
           unit: item.unit || 'pcs',
-          lastUsedAt: item.createdAt || Date.now(),
+          lastUsedAt: itemUsedAt,
+        });
+        changed = true;
+      } else if (itemUsedAt > (existing.lastUsedAt || 0)) {
+        byKey.set(key, {
+          title: item.title.trim(),
+          categoryId: item.categoryId || existing.categoryId,
+          quantity: item.quantity || existing.quantity || 1,
+          unit: item.unit || existing.unit || 'pcs',
+          lastUsedAt: itemUsedAt,
         });
         changed = true;
       }
     });
+
     if (changed) {
-      this.cachedRecentItems = [...this.cachedRecentItems, ...additions].slice(0, 30);
+      this.cachedRecentItems = Array.from(byKey.values())
+        .sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0))
+        .slice(0, 500);
+      try {
+        localStorage.setItem(LOCAL_RECENT_ITEMS_KEY, JSON.stringify(this.cachedRecentItems));
+      } catch {
+        // ignore quota
+      }
       this.recentItemsListeners.forEach((l) => l([...this.cachedRecentItems]));
     }
   }
@@ -610,7 +636,11 @@ class FirebaseSyncManager {
     if (this.currentConfig.mode === 'firebase' && this.firestore) {
       try {
         const itemRef = doc(this.firestore, 'family_groups', this.currentConfig.groupId, 'items', id);
-        await updateDoc(itemRef, updates);
+        const firestoreUpdates: Record<string, unknown> = {};
+        Object.entries(updates).forEach(([k, v]) => {
+          firestoreUpdates[k] = v === undefined ? deleteField() : v;
+        });
+        await updateDoc(itemRef, firestoreUpdates);
         return;
       } catch (err) {
         console.error('Firestore updateItem failed:', err);
@@ -627,8 +657,40 @@ class FirebaseSyncManager {
     if (!target) return;
 
     const completed = !target.completed;
-    const completedAt = completed ? Date.now() : undefined;
-    await this.updateItem(id, { completed, completedAt });
+    const completedAt = completed ? Date.now() : null;
+    this.recordRecentItem({
+      title: target.title,
+      categoryId: target.categoryId,
+      quantity: target.quantity || 1,
+      unit: target.unit || 'pcs',
+      lastUsedAt: Date.now(),
+    });
+    await this.updateItem(id, {
+      completed,
+      completedAt,
+      cancelled: false,
+      cancelledAt: null,
+    });
+  }
+
+  public async cancelItem(id: string): Promise<void> {
+    const target = this.cachedItems.find((i) => i.id === id);
+    if (!target) return;
+    await this.updateItem(id, {
+      cancelled: true,
+      cancelledAt: Date.now(),
+      completed: false,
+      completedAt: null,
+    });
+  }
+
+  public async restoreItem(id: string): Promise<void> {
+    const target = this.cachedItems.find((i) => i.id === id);
+    if (!target) return;
+    await this.updateItem(id, {
+      cancelled: false,
+      cancelledAt: null,
+    });
   }
 
   public async deleteItem(id: string): Promise<void> {
@@ -648,7 +710,7 @@ class FirebaseSyncManager {
   }
 
   public async clearCompletedItems(): Promise<number> {
-    const completedItems = this.cachedItems.filter((i) => i.completed);
+    const completedItems = this.cachedItems.filter((i) => i.completed && !i.cancelled);
     if (completedItems.length === 0) return 0;
 
     if (this.currentConfig.mode === 'firebase' && this.firestore) {
@@ -665,10 +727,34 @@ class FirebaseSyncManager {
       }
     }
 
-    this.cachedItems = this.cachedItems.filter((i) => !i.completed);
+    this.cachedItems = this.cachedItems.filter((i) => !(i.completed && !i.cancelled));
     this.saveLocalCache();
     this.itemsListeners.forEach((l) => l([...this.cachedItems]));
     return completedItems.length;
+  }
+
+  public async clearCancelledItems(): Promise<number> {
+    const cancelledItems = this.cachedItems.filter((i) => Boolean(i.cancelled));
+    if (cancelledItems.length === 0) return 0;
+
+    if (this.currentConfig.mode === 'firebase' && this.firestore) {
+      try {
+        const batch = writeBatch(this.firestore);
+        cancelledItems.forEach((i) => {
+          const itemRef = doc(this.firestore!, 'family_groups', this.currentConfig.groupId, 'items', i.id);
+          batch.delete(itemRef);
+        });
+        await batch.commit();
+        return cancelledItems.length;
+      } catch (err) {
+        console.error('Firestore batch clear cancelled failed:', err);
+      }
+    }
+
+    this.cachedItems = this.cachedItems.filter((i) => !i.cancelled);
+    this.saveLocalCache();
+    this.itemsListeners.forEach((l) => l([...this.cachedItems]));
+    return cancelledItems.length;
   }
 
   // --- Weekend Template Master ---
@@ -689,6 +775,16 @@ class FirebaseSyncManager {
       createdAt: Date.now() + index * 10,
       addedBy: 'Template Master',
     }));
+
+    newItems.forEach((ni) => {
+      this.recordRecentItem({
+        title: ni.title,
+        categoryId: ni.categoryId,
+        quantity: ni.quantity || 1,
+        unit: ni.unit || 'pcs',
+        lastUsedAt: ni.createdAt,
+      });
+    });
 
     if (this.currentConfig.mode === 'firebase' && this.firestore) {
       try {

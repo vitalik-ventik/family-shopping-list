@@ -19,7 +19,9 @@ export interface ShoppingItem {
   unit: string;
   note?: string;
   completed: boolean;
-  completedAt?: number;
+  completedAt?: number | null;
+  cancelled?: boolean;
+  cancelledAt?: number | null;
   createdAt: number;
   addedBy?: string;
   urgent?: boolean;

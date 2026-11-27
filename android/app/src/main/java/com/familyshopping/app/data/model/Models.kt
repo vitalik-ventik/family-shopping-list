@@ -9,6 +9,8 @@ data class ShoppingItem(
     val note: String? = null,
     val completed: Boolean = false,
     val completedAt: Long? = null,
+    val cancelled: Boolean = false,
+    val cancelledAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val addedBy: String? = null,
     val urgent: Boolean = false,
