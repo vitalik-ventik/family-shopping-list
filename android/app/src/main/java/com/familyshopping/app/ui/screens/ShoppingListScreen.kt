@@ -18,10 +18,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -342,7 +342,7 @@ fun ShoppingItemRow(
             }
             IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                 Icon(
-                    Icons.Default.DeleteOutline,
+                    Icons.Outlined.Delete,
                     contentDescription = "Delete",
                     tint = Color(0xFFA1A1AA),
                     modifier = Modifier.size(18.dp)
@@ -400,7 +400,10 @@ private fun AddItemDialog(
                 }
 
                 if (categories.isNotEmpty()) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         items(categories, key = { it.id }) { cat ->
                             FilterChip(
                                 selected = selectedCategoryId == cat.id,
