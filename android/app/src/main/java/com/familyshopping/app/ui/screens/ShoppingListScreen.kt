@@ -3,6 +3,8 @@ package com.familyshopping.app.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +17,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Notifications
@@ -57,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familyshopping.app.R
 import com.familyshopping.app.data.model.Category
+import com.familyshopping.app.data.model.RecentItem
 import com.familyshopping.app.data.model.ShoppingItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +69,7 @@ import com.familyshopping.app.data.model.ShoppingItem
 fun ShoppingListScreen(
     items: List<ShoppingItem>,
     categories: List<Category>,
+    recentItems: List<RecentItem>,
     isConnected: Boolean,
     onToggleItem: (ShoppingItem) -> Unit,
     onAddItem: (String, String, Int, String, Boolean) -> Unit,
@@ -266,8 +272,12 @@ fun ShoppingListScreen(
     }
 
     if (showAddDialog) {
+        val pendingTitles = remember(items) {
+            items.filter { !it.completed }.map { it.title.trim().lowercase() }.toSet()
+        }
         AddItemDialog(
             categories = categories,
+            recentItems = recentItems.filter { it.title.trim().lowercase() !in pendingTitles },
             defaultCategoryId = selectedCategoryFilter ?: categories.firstOrNull()?.id ?: "cat_produce",
             onDismiss = { showAddDialog = false },
             onConfirm = { title, catId, qty, unit, urgent ->
@@ -352,9 +362,11 @@ fun ShoppingItemRow(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AddItemDialog(
     categories: List<Category>,
+    recentItems: List<RecentItem>,
     defaultCategoryId: String,
     onDismiss: () -> Unit,
     onConfirm: (String, String, Int, String, Boolean) -> Unit
@@ -365,11 +377,19 @@ private fun AddItemDialog(
     var unit by remember { mutableStateOf("pcs") }
     var urgent by remember { mutableStateOf(false) }
 
+    val filteredRecent = remember(recentItems, title) {
+        val q = title.trim().lowercase()
+        recentItems.filter { q.isEmpty() || it.title.lowercase().contains(q) }.take(8)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.action_add_item), fontWeight = FontWeight.SemiBold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -377,6 +397,36 @@ private fun AddItemDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                if (filteredRecent.isNotEmpty()) {
+                    Text(
+                        text = "Recent (tap to add):",
+                        fontSize = 11.sp,
+                        color = Color(0xFF71717A),
+                        fontWeight = FontWeight.Medium
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        filteredRecent.forEach { recent ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    onConfirm(
+                                        recent.title,
+                                        recent.categoryId,
+                                        recent.quantity,
+                                        recent.unit,
+                                        false
+                                    )
+                                },
+                                label = { Text("+ ${recent.title}", fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

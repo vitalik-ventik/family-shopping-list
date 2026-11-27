@@ -1,5 +1,7 @@
 package com.familyshopping.app.ui.screens
 
+import android.net.Uri
+import android.util.Base64
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -34,13 +37,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familyshopping.app.R
 import com.familyshopping.app.data.model.FirebaseConfig
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +58,7 @@ fun SettingsScreen(
     onSaveConfig: (FirebaseConfig) -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     var apiKey by remember { mutableStateOf(currentConfig.apiKey) }
     var projectId by remember { mutableStateOf(currentConfig.projectId) }
     var appId by remember { mutableStateOf(currentConfig.appId) }
@@ -67,6 +76,77 @@ fun SettingsScreen(
         groupId = groupId.trim().ifBlank { "default-family" },
         isConfigured = apiKey.isNotBlank() && projectId.isNotBlank() && appId.isNotBlank()
     )
+
+    fun applyRawPairingPayload(raw: String) {
+        try {
+            val trimmed = raw.trim()
+            val jsonText = if (trimmed.contains("fc=")) {
+                val token = Uri.parse(trimmed).getQueryParameter("fc")
+                    ?: trimmed.substringAfter("fc=").substringBefore("&")
+                val decodedBytes = Base64.decode(
+                    token,
+                    Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+                )
+                String(decodedBytes, Charsets.UTF_8)
+            } else {
+                trimmed
+            }
+
+            val obj = JSONObject(jsonText)
+            val scannedApiKey = obj.optString("apiKey", "").trim()
+            val scannedProjectId = obj.optString("projectId", "").trim()
+            val scannedAppId = obj.optString("appId", "").trim()
+            val scannedBucket = obj.optString("storageBucket", "").trim()
+            val scannedGroupId = obj.optString("groupId", "my-family").trim().ifBlank { "my-family" }
+
+            apiKey = scannedApiKey
+            projectId = scannedProjectId
+            appId = scannedAppId
+            storageBucket = scannedBucket
+            groupId = scannedGroupId
+
+            val newCfg = FirebaseConfig(
+                apiKey = scannedApiKey,
+                projectId = scannedProjectId,
+                appId = scannedAppId,
+                storageBucket = scannedBucket,
+                groupId = scannedGroupId,
+                isConfigured = scannedApiKey.isNotBlank() && scannedProjectId.isNotBlank() && scannedAppId.isNotBlank()
+            )
+            onSaveConfig(newCfg)
+            isError = false
+            statusMessage = if (newCfg.isConfigured) {
+                "QR scanned & connected to \"$scannedGroupId\"!"
+            } else {
+                "QR imported group \"$scannedGroupId\" (enter Firebase keys on PC first for cloud sync)"
+            }
+        } catch (e: Exception) {
+            isError = true
+            statusMessage = "Invalid QR pairing data: ${e.localizedMessage ?: "unknown format"}"
+        }
+    }
+
+    fun startQrScan() {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        val scanner = GmsBarcodeScanning.getClient(context, options)
+        scanner.startScan()
+            .addOnSuccessListener { barcode ->
+                val raw = barcode.rawValue
+                if (!raw.isNullOrBlank()) {
+                    applyRawPairingPayload(raw)
+                } else {
+                    isError = true
+                    statusMessage = "Empty QR code"
+                }
+            }
+            .addOnFailureListener { err ->
+                isError = true
+                statusMessage = "QR scanner error: ${err.localizedMessage ?: "Google Play Services required"}"
+            }
+    }
 
     Scaffold(
         topBar = {
@@ -88,6 +168,17 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            Button(
+                onClick = { startQrScan() },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(Icons.Default.QrCodeScanner, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Scan QR from Web / Сканувати QR")
+            }
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F4F5)),
                 shape = RoundedCornerShape(10.dp)
@@ -100,7 +191,7 @@ fun SettingsScreen(
                         color = Color(0xFF18181B)
                     )
                     Text(
-                        text = "Enter the same Firebase Project & Group ID on Web and Android to sync your family list in real time.",
+                        text = "Scan the QR code from the Web App or enter the same Firebase Project & Group ID manually to sync your family list in real time.",
                         fontSize = 12.sp,
                         color = Color(0xFF52525B)
                     )

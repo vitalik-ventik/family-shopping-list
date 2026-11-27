@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
                     val items by repository.items.collectAsState()
                     val categories by repository.categories.collectAsState()
                     val templates by repository.templates.collectAsState()
+                    val recentItems by repository.recentItems.collectAsState()
                     val isConnected by repository.isConnected.collectAsState()
 
                     var schedules by remember { mutableStateOf(prefs.getSchedules()) }
@@ -76,6 +77,7 @@ class MainActivity : ComponentActivity() {
                         "list" -> ShoppingListScreen(
                             items = items,
                             categories = categories,
+                            recentItems = recentItems,
                             isConnected = isConnected,
                             onToggleItem = { item -> scope.launch { repository.toggleItem(item) } },
                             onAddItem = { title, catId, qty, unit, urgent ->

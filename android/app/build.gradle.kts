@@ -62,4 +62,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+
+    // Google Play Services Turnkey QR Code Scanner (no CAMERA permission needed)
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }

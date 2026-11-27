@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ShoppingItem, Category } from '../types';
+import { ShoppingItem, Category, RecentItem } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { useLanguage } from '../i18n/LanguageContext';
 import {
@@ -16,12 +16,14 @@ import {
   ChevronRight,
   SlidersHorizontal,
   Sparkles,
+  History,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface ShoppingListViewProps {
   items: ShoppingItem[];
   categories: Category[];
+  recentItems: RecentItem[];
   onOpenWeekendMaster: () => void;
   onOpenManageCategories: () => void;
   quickAddInputRef?: React.RefObject<HTMLInputElement | null>;
@@ -30,11 +32,12 @@ interface ShoppingListViewProps {
 export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
   items,
   categories,
+  recentItems,
   onOpenWeekendMaster,
   onOpenManageCategories,
   quickAddInputRef,
 }) => {
-  const { t, getCategoryName, getUnitName, getMemberName, locale } = useLanguage();
+  const { t, getCategoryName, getUnitName, getMemberName } = useLanguage();
 
   // Filters & State
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,6 +56,7 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
   const [newPrice, setNewPrice] = useState<string>('');
   const [newAddedBy, setNewAddedBy] = useState('Me');
   const [isQuickAddExpanded, setIsQuickAddExpanded] = useState(false);
+  const [isTitleFocused, setIsTitleFocused] = useState(false);
 
   // Edit Item State
   const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null);
@@ -62,6 +66,20 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     categories.forEach((c) => map.set(c.id, c));
     return map;
   }, [categories]);
+
+  const filteredRecentSuggestions = useMemo(() => {
+    const q = newTitle.trim().toLowerCase();
+    const pendingTitles = new Set(
+      items.filter((i) => !i.completed).map((i) => i.title.trim().toLowerCase())
+    );
+    return recentItems
+      .filter((r) => {
+        const key = r.title.trim().toLowerCase();
+        if (q && !key.includes(q)) return false;
+        return !pendingTitles.has(key);
+      })
+      .slice(0, 10);
+  }, [recentItems, newTitle, items]);
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -164,6 +182,19 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
     setIsQuickAddExpanded(false);
   };
 
+  const handleQuickPickRecent = async (recent: RecentItem) => {
+    await firebaseService.addItem({
+      title: recent.title,
+      categoryId: recent.categoryId || newCategoryId,
+      quantity: recent.quantity || 1,
+      unit: recent.unit || 'pcs',
+      urgent: false,
+      addedBy: newAddedBy,
+      completed: false,
+    });
+    setNewTitle('');
+  };
+
   const handleClearCompleted = async () => {
     if (completedCount === 0) return;
     if (window.confirm(t.confirmClearCompleted(completedCount))) {
@@ -260,6 +291,8 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
               type="text"
               placeholder={t.quickAddPlaceholder}
               value={newTitle}
+              onFocus={() => setIsTitleFocused(true)}
+              onBlur={() => setTimeout(() => setIsTitleFocused(false), 150)}
               onChange={(e) => setNewTitle(e.target.value)}
               className="flex-1 px-3 py-2 rounded-lg bg-transparent text-neutral-900 placeholder-neutral-400 text-sm focus:outline-none focus:bg-neutral-50 transition-colors"
             />
@@ -384,6 +417,55 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
             </div>
           )}
         </form>
+
+        {(isTitleFocused || newTitle.trim().length > 0) && filteredRecentSuggestions.length > 0 && (
+          <div className="mt-2 pt-2 px-1 border-t border-neutral-100">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-neutral-400 mb-1.5">
+              <History className="w-3 h-3" />
+              <span>{t.recentItemsLabel}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {filteredRecentSuggestions.map((recent) => {
+                const cat = categoryMap.get(recent.categoryId);
+                return (
+                  <div
+                    key={recent.title}
+                    className="inline-flex items-center rounded-lg border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 hover:border-neutral-300 transition-colors"
+                  >
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleQuickPickRecent(recent);
+                      }}
+                      className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 text-xs font-medium text-neutral-800"
+                    >
+                      {cat && <span className="text-xs">{cat.icon}</span>}
+                      <span>{recent.title}</span>
+                      {(recent.quantity > 1 || recent.unit !== 'pcs') && (
+                        <span className="text-[11px] text-neutral-400 tabular-nums">
+                          {recent.quantity} {getUnitName(recent.unit)}
+                        </span>
+                      )}
+                      <Plus className="w-3 h-3 text-emerald-600 ml-0.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        firebaseService.removeRecentItem(recent.title);
+                      }}
+                      title="Remove from history"
+                      className="pr-2 pl-0.5 py-1 text-neutral-300 hover:text-neutral-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filter & Search Bar */}

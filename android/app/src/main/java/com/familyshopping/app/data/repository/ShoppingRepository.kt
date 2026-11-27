@@ -5,6 +5,7 @@ import android.util.Log
 import com.familyshopping.app.data.local.PreferencesManager
 import com.familyshopping.app.data.model.Category
 import com.familyshopping.app.data.model.FirebaseConfig
+import com.familyshopping.app.data.model.RecentItem
 import com.familyshopping.app.data.model.ShoppingItem
 import com.familyshopping.app.data.model.ShoppingTemplate
 import com.familyshopping.app.data.model.TemplateItem
@@ -38,6 +39,9 @@ class ShoppingRepository(private val context: Context) {
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+    private val _recentItems = MutableStateFlow<List<RecentItem>>(prefs.getRecentItems())
+    val recentItems: StateFlow<List<RecentItem>> = _recentItems.asStateFlow()
 
     init {
         if (!initializeFirestore()) {
@@ -96,6 +100,7 @@ class ShoppingRepository(private val context: Context) {
                     doc.toObject(ShoppingItem::class.java)?.copy(id = doc.id)
                 } ?: emptyList()
                 _items.value = fetched
+                mergeRecentFromItems(fetched)
             }
 
         categoriesListener = groupRef.collection("categories")
@@ -192,6 +197,14 @@ class ShoppingRepository(private val context: Context) {
     }
 
     suspend fun addItem(item: ShoppingItem) {
+        _recentItems.value = prefs.recordRecentItem(
+            RecentItem(
+                title = item.title,
+                categoryId = item.categoryId,
+                quantity = item.quantity,
+                unit = item.unit
+            )
+        )
         val firestore = firestoreInstance
         if (firestore == null) {
             _items.value = _items.value + item
@@ -204,6 +217,31 @@ class ShoppingRepository(private val context: Context) {
             .document(item.id)
             .set(item)
             .await()
+    }
+
+    private fun mergeRecentFromItems(items: List<ShoppingItem>) {
+        val current = _recentItems.value
+        val existingKeys = current.map { it.title.trim().lowercase(Locale.getDefault()) }.toMutableSet()
+        val additions = mutableListOf<RecentItem>()
+        items.forEach { item ->
+            val key = item.title.trim().lowercase(Locale.getDefault())
+            if (key.isNotEmpty() && existingKeys.add(key)) {
+                additions.add(
+                    RecentItem(
+                        title = item.title.trim(),
+                        categoryId = item.categoryId,
+                        quantity = item.quantity,
+                        unit = item.unit,
+                        lastUsedAt = item.createdAt
+                    )
+                )
+            }
+        }
+        if (additions.isNotEmpty()) {
+            val merged = (current + additions).take(30)
+            prefs.saveRecentItems(merged)
+            _recentItems.value = merged
+        }
     }
 
     suspend fun deleteItem(itemId: String) {

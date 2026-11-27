@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Share2, Plus } from 'lucide-react';
+import { Settings, QrCode, Plus } from 'lucide-react';
 import { SyncStatus, FirebaseConfig } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -132,14 +132,15 @@ export const Header: React.FC<HeaderProps> = ({
             {/* In-App PWA Install Button */}
             <PWAInstallButton />
 
-            {/* Share QR */}
+            {/* Phone QR Pairing */}
             <button
               type="button"
               onClick={onOpenShareModal}
-              title={t.shareTitle}
+              title={t.qrPairingTitle}
+              aria-label={t.qrPairingTitle}
               className="p-2 rounded-md text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
             >
-              <Share2 className="w-4 h-4" />
+              <QrCode className="w-4 h-4" />
             </button>
 
             {/* Settings */}

@@ -6,6 +6,7 @@ import {
   NotificationSchedule,
   SyncStatus,
   FirebaseConfig,
+  RecentItem,
 } from './types';
 import { firebaseService } from './services/firebaseService';
 import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
@@ -25,8 +26,10 @@ function MainApp() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [templates, setTemplates] = useState<WeekendTemplate[]>([]);
   const [schedules, setSchedules] = useState<NotificationSchedule[]>([]);
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ state: 'disconnected' });
   const [config, setConfig] = useState<FirebaseConfig>(firebaseService.getStoredConfig());
+  const [qrImportedBanner, setQrImportedBanner] = useState(firebaseService.autoImportedFromUrl);
 
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -39,6 +42,7 @@ function MainApp() {
     const unsubCats = firebaseService.subscribeToCategories(setCategories);
     const unsubTmpls = firebaseService.subscribeToTemplates(setTemplates);
     const unsubScheds = firebaseService.subscribeToSchedules(setSchedules);
+    const unsubRecent = firebaseService.subscribeToRecentItems(setRecentItems);
     const unsubStatus = firebaseService.subscribeToStatus((status) => {
       setSyncStatus(status);
       setConfig(firebaseService.getStoredConfig());
@@ -49,9 +53,16 @@ function MainApp() {
       unsubCats();
       unsubTmpls();
       unsubScheds();
+      unsubRecent();
       unsubStatus();
     };
   }, []);
+
+  useEffect(() => {
+    if (!qrImportedBanner) return;
+    const timer = setTimeout(() => setQrImportedBanner(false), 5000);
+    return () => clearTimeout(timer);
+  }, [qrImportedBanner]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -98,10 +109,26 @@ function MainApp() {
       />
 
       <main className="flex-1 pb-16">
+        {qrImportedBanner && (
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4">
+            <div className="px-3.5 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center justify-between">
+              <span>{t.qrImportedNotice(config.groupId)}</span>
+              <button
+                type="button"
+                onClick={() => setQrImportedBanner(false)}
+                className="text-emerald-700 hover:text-emerald-950 ml-3"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'list' && (
           <ShoppingListView
             items={items}
             categories={categories}
+            recentItems={recentItems}
             onOpenWeekendMaster={() => setActiveTab('templates')}
             onOpenManageCategories={() => setIsCategoryModalOpen(true)}
             quickAddInputRef={quickAddInputRef}

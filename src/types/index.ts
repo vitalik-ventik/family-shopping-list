@@ -75,4 +75,12 @@ export interface SyncStatus {
   details?: string;
 }
 
+export interface RecentItem {
+  title: string;
+  categoryId: string;
+  quantity: number;
+  unit: string;
+  lastUsedAt: number;
+}
+
 export type SupportedLocale = 'en' | 'uk';

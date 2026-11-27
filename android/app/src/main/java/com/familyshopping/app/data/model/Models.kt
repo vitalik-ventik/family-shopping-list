@@ -62,3 +62,11 @@ data class FirebaseConfig(
     val groupId: String = "default-family",
     val isConfigured: Boolean = false
 )
+
+data class RecentItem(
+    val title: String = "",
+    val categoryId: String = "cat_produce",
+    val quantity: Int = 1,
+    val unit: String = "pcs",
+    val lastUsedAt: Long = System.currentTimeMillis()
+)

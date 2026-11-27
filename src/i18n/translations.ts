@@ -151,6 +151,11 @@ export interface TranslationSchema {
   familyGroupCode: string;
   shareExplanation: string;
   closeBtn: string;
+  copyPairingLinkBtn: string;
+  copiedLinkBtn: string;
+  qrNeedsConfigHint: string;
+  qrImportedNotice: (groupId: string) => string;
+  recentItemsLabel: string;
 
   // Category Manager
   categoriesModalTitle: string;
@@ -320,6 +325,11 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     addNewCategoryLabel: 'Add New Category',
     newCategoryPlaceholder: 'e.g. Pet Supplies, Bakery, Pharmacy',
     confirmDeleteCategory: (name) => `Delete category "${name}"? Existing items will be moved to Miscellaneous.`,
+    copyPairingLinkBtn: 'Copy Pairing Link',
+    copiedLinkBtn: 'Link Copied',
+    qrNeedsConfigHint: 'Configure Firebase in Settings first so the QR code includes real sync credentials.',
+    qrImportedNotice: (groupId) => `Connected via QR link to group "${groupId}"`,
+    recentItemsLabel: 'Recent items (click to add)',
 
     categoryNames: {
       cat_produce: 'Produce',
@@ -506,6 +516,11 @@ export const translations: Record<SupportedLocale, TranslationSchema> = {
     addNewCategoryLabel: 'Додати нову категорію',
     newCategoryPlaceholder: 'напр. Товари для тварин, Аптека, Кава та чай',
     confirmDeleteCategory: (name) => `Видалити категорію "${name}"? Товари з неї перейдуть до розділу "Різне".`,
+    copyPairingLinkBtn: 'Копіювати посилання',
+    copiedLinkBtn: 'Скопійовано!',
+    qrNeedsConfigHint: 'Спочатку вкажіть ключі Firebase у Налаштуваннях, щоб QR-код містив реальне підключення.',
+    qrImportedNotice: (groupId) => `Підключено за QR-посиланням до групи «${groupId}»`,
+    recentItemsLabel: 'Останні додані (натисніть, щоб додати)',
 
     categoryNames: {
       cat_produce: 'Овочі та фрукти',

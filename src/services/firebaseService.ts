@@ -19,7 +19,9 @@ import {
   WeekendTemplate,
   NotificationSchedule,
   SyncStatus,
+  RecentItem,
 } from '../types';
+import { parsePairingTokenFromUrl } from '../utils/pairing';
 import {
   DEFAULT_CATEGORIES,
   INITIAL_ITEMS,
@@ -32,6 +34,7 @@ const LOCAL_ITEMS_KEY = 'family_shopping_local_items';
 const LOCAL_CATEGORIES_KEY = 'family_shopping_local_categories';
 const LOCAL_TEMPLATES_KEY = 'family_shopping_local_templates';
 const LOCAL_SCHEDULES_KEY = 'family_shopping_local_schedules';
+const LOCAL_RECENT_ITEMS_KEY = 'family_shopping_recent_items';
 
 // BroadcastChannel for instant multi-tab sync in local/demo mode
 let localBroadcastChannel: BroadcastChannel | null = null;
@@ -62,6 +65,10 @@ class FirebaseSyncManager {
   private cachedCategories: Category[] = [];
   private cachedTemplates: WeekendTemplate[] = [];
   private cachedSchedules: NotificationSchedule[] = [];
+  private cachedRecentItems: RecentItem[] = [];
+  private recentItemsListeners: Set<(items: RecentItem[]) => void> = new Set();
+
+  public autoImportedFromUrl = false;
 
   private currentStatus: SyncStatus = {
     state: 'disconnected',
@@ -83,6 +90,32 @@ class FirebaseSyncManager {
   }
 
   private loadStoredConfig(): FirebaseConfig {
+    const urlPayload = parsePairingTokenFromUrl();
+    if (urlPayload) {
+      const importedConfig: FirebaseConfig = {
+        apiKey: urlPayload.apiKey,
+        projectId: urlPayload.projectId,
+        appId: urlPayload.appId,
+        storageBucket: urlPayload.storageBucket || '',
+        messagingSenderId: urlPayload.messagingSenderId || '',
+        authDomain: urlPayload.authDomain || '',
+        groupId: urlPayload.groupId || 'my-family',
+        isConfigured: Boolean(urlPayload.apiKey && urlPayload.projectId),
+        mode: urlPayload.apiKey && urlPayload.projectId ? 'firebase' : 'demo',
+      };
+      try {
+        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(importedConfig));
+        if (typeof window !== 'undefined') {
+          const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+          window.history.replaceState({}, '', cleanUrl);
+        }
+        this.autoImportedFromUrl = true;
+      } catch (e) {
+        console.warn('Failed to persist imported QR config', e);
+      }
+      return importedConfig;
+    }
+
     try {
       const stored = localStorage.getItem(CONFIG_STORAGE_KEY);
       if (stored) {
@@ -127,11 +160,25 @@ class FirebaseSyncManager {
 
       const schedJson = localStorage.getItem(LOCAL_SCHEDULES_KEY);
       this.cachedSchedules = schedJson ? JSON.parse(schedJson) : DEFAULT_NOTIFICATIONS;
+
+      const recentJson = localStorage.getItem(LOCAL_RECENT_ITEMS_KEY);
+      if (recentJson) {
+        this.cachedRecentItems = JSON.parse(recentJson);
+      } else {
+        this.cachedRecentItems = this.cachedItems.slice(0, 20).map((item, idx) => ({
+          title: item.title,
+          categoryId: item.categoryId,
+          quantity: item.quantity || 1,
+          unit: item.unit || 'pcs',
+          lastUsedAt: item.createdAt || Date.now() - idx * 1000,
+        }));
+      }
     } catch {
       this.cachedItems = INITIAL_ITEMS;
       this.cachedCategories = DEFAULT_CATEGORIES;
       this.cachedTemplates = DEFAULT_WEEKEND_TEMPLATES;
       this.cachedSchedules = DEFAULT_NOTIFICATIONS;
+      this.cachedRecentItems = [];
     }
   }
 
@@ -259,6 +306,7 @@ class FirebaseSyncManager {
             items.push({ id: d.id, ...(d.data() as Omit<ShoppingItem, 'id'>) });
           });
           this.cachedItems = items;
+          this.mergeRecentItemsFromList(items);
           this.saveLocalCache();
           this.itemsListeners.forEach((l) => l([...items]));
           this.updateStatus({
@@ -371,10 +419,74 @@ class FirebaseSyncManager {
       localStorage.setItem(LOCAL_CATEGORIES_KEY, JSON.stringify(this.cachedCategories));
       localStorage.setItem(LOCAL_TEMPLATES_KEY, JSON.stringify(this.cachedTemplates));
       localStorage.setItem(LOCAL_SCHEDULES_KEY, JSON.stringify(this.cachedSchedules));
+      localStorage.setItem(LOCAL_RECENT_ITEMS_KEY, JSON.stringify(this.cachedRecentItems));
       this.broadcastLocalUpdate();
     } catch {
       // ignore quota errors
     }
+  }
+
+  private recordRecentItem(entry: RecentItem) {
+    const normalized = entry.title.trim().toLowerCase();
+    if (!normalized) return;
+    const filtered = this.cachedRecentItems.filter(
+      (r) => r.title.trim().toLowerCase() !== normalized
+    );
+    this.cachedRecentItems = [
+      { ...entry, title: entry.title.trim(), lastUsedAt: Date.now() },
+      ...filtered,
+    ].slice(0, 30);
+    try {
+      localStorage.setItem(LOCAL_RECENT_ITEMS_KEY, JSON.stringify(this.cachedRecentItems));
+    } catch {
+      // ignore quota
+    }
+    this.recentItemsListeners.forEach((l) => l([...this.cachedRecentItems]));
+  }
+
+  private mergeRecentItemsFromList(items: ShoppingItem[]) {
+    const existingKeys = new Set(
+      this.cachedRecentItems.map((r) => r.title.trim().toLowerCase())
+    );
+    let changed = false;
+    const additions: RecentItem[] = [];
+    items.forEach((item) => {
+      const key = item.title.trim().toLowerCase();
+      if (key && !existingKeys.has(key)) {
+        existingKeys.add(key);
+        additions.push({
+          title: item.title.trim(),
+          categoryId: item.categoryId,
+          quantity: item.quantity || 1,
+          unit: item.unit || 'pcs',
+          lastUsedAt: item.createdAt || Date.now(),
+        });
+        changed = true;
+      }
+    });
+    if (changed) {
+      this.cachedRecentItems = [...this.cachedRecentItems, ...additions].slice(0, 30);
+      this.recentItemsListeners.forEach((l) => l([...this.cachedRecentItems]));
+    }
+  }
+
+  public subscribeToRecentItems(callback: (items: RecentItem[]) => void): () => void {
+    this.recentItemsListeners.add(callback);
+    callback([...this.cachedRecentItems]);
+    return () => this.recentItemsListeners.delete(callback);
+  }
+
+  public removeRecentItem(title: string) {
+    const key = title.trim().toLowerCase();
+    this.cachedRecentItems = this.cachedRecentItems.filter(
+      (r) => r.title.trim().toLowerCase() !== key
+    );
+    try {
+      localStorage.setItem(LOCAL_RECENT_ITEMS_KEY, JSON.stringify(this.cachedRecentItems));
+    } catch {
+      // ignore quota
+    }
+    this.recentItemsListeners.forEach((l) => l([...this.cachedRecentItems]));
   }
 
   // --- Public API for subscribing ---
@@ -467,6 +579,14 @@ class FirebaseSyncManager {
       id,
       createdAt: Date.now(),
     };
+
+    this.recordRecentItem({
+      title: newItem.title,
+      categoryId: newItem.categoryId,
+      quantity: newItem.quantity || 1,
+      unit: newItem.unit || 'pcs',
+      lastUsedAt: Date.now(),
+    });
 
     if (this.currentConfig.mode === 'firebase' && this.firestore) {
       try {

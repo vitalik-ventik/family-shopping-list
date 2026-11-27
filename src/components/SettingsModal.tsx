@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FirebaseConfig, SyncStatus } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { useLanguage } from '../i18n/LanguageContext';
+import { buildPairingUrl } from '../utils/pairing';
 import QRCode from 'qrcode';
 import {
   Check,
@@ -9,6 +10,7 @@ import {
   ShieldCheck,
   RefreshCw,
   X,
+  Link2,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -44,6 +46,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     latencyMs?: number;
   }>({});
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [pairingUrl, setPairingUrl] = useState<string>('');
+  const [copiedLink, setCopiedLink] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -58,19 +62,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   }, [currentConfig]);
 
   useEffect(() => {
-    const configPayload = {
+    const url = buildPairingUrl({
       apiKey,
       projectId,
       appId,
       storageBucket,
       messagingSenderId,
-      groupId: groupId.trim() || 'default-family',
-    };
+      authDomain,
+      groupId: groupId.trim() || 'my-family',
+      isConfigured: Boolean(apiKey && projectId),
+      mode,
+    });
+    setPairingUrl(url);
 
-    QRCode.toDataURL(JSON.stringify(configPayload), { width: 180, margin: 1 })
-      .then((url) => setQrCodeDataUrl(url))
+    QRCode.toDataURL(url, { width: 180, margin: 1 })
+      .then((dataUrl) => setQrCodeDataUrl(dataUrl))
       .catch((err) => console.error('Failed to generate QR code', err));
-  }, [apiKey, projectId, appId, storageBucket, messagingSenderId, groupId]);
+  }, [apiKey, projectId, appId, storageBucket, messagingSenderId, authDomain, groupId, mode]);
 
   if (!isOpen) return null;
 
@@ -79,6 +87,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     try {
       let cleaned = rawPasteSnippet.trim();
+
+      if (cleaned.includes('fc=')) {
+        const matchToken = cleaned.match(/[?&]fc=([^&#\s]+)/);
+        if (matchToken && matchToken[1]) {
+          const b64 = matchToken[1].replace(/-/g, '+').replace(/_/g, '/');
+          const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+          const binary = atob(padded);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          cleaned = new TextDecoder().decode(bytes);
+        }
+      }
+
       const matchObj = cleaned.match(/\{[\s\S]*\}/);
       if (matchObj) {
         cleaned = matchObj[0];
@@ -364,11 +385,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 alt="Family Sync QR Code"
                 className="w-20 h-20 rounded-lg border border-neutral-200 bg-white p-1 shrink-0"
               />
-              <div className="space-y-0.5">
+              <div className="space-y-1.5 flex-1">
                 <div className="text-xs font-medium text-neutral-800">{t.qrPairingTitle}</div>
                 <p className="text-[11px] text-neutral-500 leading-snug">
                   {t.qrPairingDesc(groupId)}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(pairingUrl);
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2000);
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 text-[11px] font-medium transition-colors"
+                >
+                  {copiedLink ? (
+                    <Check className="w-3 h-3 text-emerald-600" />
+                  ) : (
+                    <Link2 className="w-3 h-3" />
+                  )}
+                  <span>{copiedLink ? t.copiedLinkBtn : t.copyPairingLinkBtn}</span>
+                </button>
               </div>
             </div>
           )}

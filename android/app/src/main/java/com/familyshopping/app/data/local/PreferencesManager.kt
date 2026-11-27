@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.familyshopping.app.data.model.FirebaseConfig
 import com.familyshopping.app.data.model.NotificationSchedule
+import com.familyshopping.app.data.model.RecentItem
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * Stores and retrieves dynamic Firebase parameters, isolation Group ID,
@@ -26,6 +28,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_IS_CONFIGURED = "firebase_is_configured"
         private const val KEY_USER_NAME = "user_display_name"
         private const val KEY_SCHEDULES_JSON = "notification_schedules_json"
+        private const val KEY_RECENT_ITEMS_JSON = "recent_items_json"
     }
 
     fun saveFirebaseConfig(config: FirebaseConfig) {
@@ -135,5 +138,81 @@ class PreferencesManager(context: Context) {
 
     fun setUserName(name: String) {
         prefs.edit().putString(KEY_USER_NAME, name).apply()
+    }
+
+    fun getRecentItems(): List<RecentItem> {
+        val raw = prefs.getString(KEY_RECENT_ITEMS_JSON, null)
+        if (raw.isNullOrBlank()) {
+            return defaultRecentItems()
+        }
+        return try {
+            val array = JSONArray(raw)
+            val result = mutableListOf<RecentItem>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val title = obj.optString("title", "").trim()
+                if (title.isNotEmpty()) {
+                    result.add(
+                        RecentItem(
+                            title = title,
+                            categoryId = obj.optString("categoryId", "cat_produce"),
+                            quantity = obj.optInt("quantity", 1),
+                            unit = obj.optString("unit", "pcs"),
+                            lastUsedAt = obj.optLong("lastUsedAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+            }
+            result
+        } catch (e: Exception) {
+            defaultRecentItems()
+        }
+    }
+
+    fun saveRecentItems(items: List<RecentItem>) {
+        val array = JSONArray()
+        items.take(30).forEach { item ->
+            val obj = JSONObject().apply {
+                put("title", item.title)
+                put("categoryId", item.categoryId)
+                put("quantity", item.quantity)
+                put("unit", item.unit)
+                put("lastUsedAt", item.lastUsedAt)
+            }
+            array.put(obj)
+        }
+        prefs.edit().putString(KEY_RECENT_ITEMS_JSON, array.toString()).apply()
+    }
+
+    fun recordRecentItem(entry: RecentItem): List<RecentItem> {
+        val cleanTitle = entry.title.trim()
+        if (cleanTitle.isEmpty()) return getRecentItems()
+        val key = cleanTitle.lowercase(Locale.getDefault())
+        val updated = listOf(entry.copy(title = cleanTitle, lastUsedAt = System.currentTimeMillis())) +
+            getRecentItems().filter { it.title.trim().lowercase(Locale.getDefault()) != key }
+        val capped = updated.take(30)
+        saveRecentItems(capped)
+        return capped
+    }
+
+    private fun defaultRecentItems(): List<RecentItem> {
+        val uk = Locale.getDefault().language == "uk"
+        return if (uk) {
+            listOf(
+                RecentItem("Молоко 2.5%", "cat_dairy", 1, "л"),
+                RecentItem("Хліб", "cat_bakery", 1, "шт"),
+                RecentItem("Яйця", "cat_dairy", 1, "дес"),
+                RecentItem("Банани", "cat_produce", 1, "кг"),
+                RecentItem("Помідори", "cat_produce", 1, "кг")
+            )
+        } else {
+            listOf(
+                RecentItem("Whole Milk", "cat_dairy", 1, "L"),
+                RecentItem("Bread", "cat_bakery", 1, "loaf"),
+                RecentItem("Eggs", "cat_dairy", 12, "pcs"),
+                RecentItem("Bananas", "cat_produce", 1, "bunch"),
+                RecentItem("Tomatoes", "cat_produce", 1, "kg")
+            )
+        }
     }
 }
