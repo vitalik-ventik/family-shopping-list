@@ -1,7 +1,12 @@
 package com.familyshopping.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,9 +67,8 @@ import com.familyshopping.app.ui.AppStrings
 import com.familyshopping.app.ui.theme.AppColorSchemeId
 import com.familyshopping.app.ui.theme.LocalAppExtendedColors
 import com.familyshopping.app.ui.theme.ThemeMode
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -214,26 +218,55 @@ fun SettingsScreen(
         }
     }
 
-    fun startQrScan() {
-        val options = GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .enableAutoZoom()
-            .build()
-        val scanner = GmsBarcodeScanning.getClient(context, options)
-        scanner.startScan()
-            .addOnSuccessListener { barcode ->
-                val raw = barcode.rawValue
-                if (!raw.isNullOrBlank()) {
-                    applyRawPairingPayload(raw)
-                } else {
-                    isError = true
-                    statusMessage = "Empty QR code"
+    val qrScannerLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val raw = result.contents
+        if (!raw.isNullOrBlank()) {
+            applyRawPairingPayload(raw)
+        }
+    }
+
+    fun launchQrScanActivity() {
+        val options = ScanOptions().apply {
+            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            setBeepEnabled(false)
+            setBarcodeImageEnabled(false)
+            setOrientationLocked(false)
+            setPrompt(
+                when (currentLanguage) {
+                    "ru" -> "Наведите камеру на QR-код"
+                    "en" -> "Point camera at the QR code"
+                    else -> "Наведіть камеру на QR-код"
                 }
+            )
+        }
+        qrScannerLauncher.launch(options)
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            launchQrScanActivity()
+        } else {
+            isError = true
+            statusMessage = when (currentLanguage) {
+                "ru" -> "Нужно разрешение на камеру для сканирования QR-кода"
+                "en" -> "Camera permission is required to scan QR codes"
+                else -> "Потрібен дозвіл на камеру для сканування QR-коду"
             }
-            .addOnFailureListener { err ->
-                isError = true
-                statusMessage = "QR scanner error: ${err.localizedMessage ?: "Google Play Services required"}"
-            }
+        }
+    }
+
+    fun startQrScan() {
+        val hasCameraPerm = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasCameraPerm) {
+            launchQrScanActivity()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     Scaffold(

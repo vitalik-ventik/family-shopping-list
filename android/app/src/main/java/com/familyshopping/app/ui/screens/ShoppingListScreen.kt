@@ -1,6 +1,8 @@
 package com.familyshopping.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,9 +29,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -40,7 +44,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,7 +73,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -874,15 +876,41 @@ fun ShoppingItemRow(
                             )
                         }
                     } else {
+                        val checkboxShape = RoundedCornerShape(7.dp)
+                        val checkboxBg = when {
+                            extended.isDark && item.completed -> Color(0xFF193026)
+                            extended.isDark -> Color(0xFF2E323D)
+                            else -> Color.White
+                        }
+                        val checkboxBorder = when {
+                            item.completed -> extended.accentSuccess
+                            extended.isDark -> Color(0xFFA1A1AA)
+                            else -> Color(0xFF9CA3AF)
+                        }
                         Box(
-                            modifier = Modifier.size(44.dp),
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onToggle() },
                             contentAlignment = Alignment.Center
                         ) {
-                            Checkbox(
-                                checked = item.completed,
-                                onCheckedChange = { onToggle() },
-                                modifier = Modifier.scale(1.3f)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(checkboxShape)
+                                    .background(checkboxBg)
+                                    .border(1.75.dp, checkboxBorder, checkboxShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (item.completed) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Completed",
+                                        tint = extended.accentSuccess,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -911,14 +939,16 @@ fun ShoppingItemRow(
                         if (item.urgent && !isMuted) {
                             Surface(
                                 color = extended.urgentBadgeBg,
+                                border = BorderStroke(1.dp, extended.urgentBadgeText),
                                 shape = RoundedCornerShape(6.dp)
                             ) {
-                                Text(
-                                    text = "!",
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = extended.urgentBadgeText
+                                Icon(
+                                    imageVector = Icons.Default.LocalFireDepartment,
+                                    contentDescription = "Urgent",
+                                    tint = extended.urgentBadgeText,
+                                    modifier = Modifier
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                        .size(13.dp)
                                 )
                             }
                         }

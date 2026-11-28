@@ -29,6 +29,7 @@ import {
   Trash2,
   ChevronDown,
   RefreshCw,
+  Flame,
 } from 'lucide-react';
 
 interface AndroidCompanionHubProps {
@@ -839,12 +840,25 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                                       <RotateCcw className="w-4 h-4" />
                                     </button>
                                   ) : (
-                                    <input
-                                      type="checkbox"
-                                      checked={item.completed}
-                                      onChange={() => {}}
-                                      className="w-4 h-4 rounded text-emerald-600"
-                                    />
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        firebaseService.toggleItem(item.id);
+                                      }}
+                                      aria-label={item.title}
+                                      className={`w-5 h-5 rounded-md border-[1.5px] flex items-center justify-center transition-colors ${
+                                        simDark
+                                          ? item.completed
+                                            ? 'bg-[#193026] border-emerald-400 text-emerald-400'
+                                            : 'bg-[#2E323D] border-zinc-400'
+                                          : item.completed
+                                            ? 'bg-white border-emerald-600 text-emerald-600'
+                                            : 'bg-white border-neutral-400'
+                                      }`}
+                                    >
+                                      {item.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                    </button>
                                   )}
                                 </div>
 
@@ -866,13 +880,14 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                                     </span>
                                     {item.urgent && !isMuted && (
                                       <span
-                                        className={`shrink-0 px-1 py-0.2 rounded text-[9px] font-bold ${
+                                        className={`shrink-0 inline-flex items-center justify-center px-1 py-0.5 rounded border ${
                                           simDark
-                                            ? 'bg-rose-950 text-rose-300'
-                                            : 'bg-rose-100 text-rose-600'
+                                            ? 'bg-rose-950 text-rose-300 border-rose-400/80'
+                                            : 'bg-rose-100 text-rose-600 border-rose-600'
                                         }`}
+                                        title={t.urgentBadge}
                                       >
-                                        !
+                                        <Flame className="w-2.5 h-2.5" />
                                       </span>
                                     )}
                                   </div>
