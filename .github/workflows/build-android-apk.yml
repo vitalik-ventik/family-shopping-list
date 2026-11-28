@@ -47,6 +47,61 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Ensure persistent debug keystore
+        run: |
+          if [ ! -f android/app/debug.keystore ]; then
+            base64 -d << 'EOF' > android/app/debug.keystore
+          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
+          FvE3lEqAsAk4nuaARAQI0WjCa0GzQFUCAggA
+          EOF
+          fi
+
       - name: Build Debug APK
         working-directory: android
         run: gradle assembleDebug -PappVersionCode=$((${{ github.run_number }} + 10)) --no-daemon --stacktrace --console=plain

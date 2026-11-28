@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ShoppingItem, Category, RecentItem } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { useLanguage } from '../i18n/LanguageContext';
+import { getCategoryTelegramStyle } from '../utils/categoryTheme';
 import {
   Plus,
   Search,
@@ -889,6 +890,7 @@ export const ShoppingListView: React.FC<ShoppingListViewProps> = ({
                         key={item.id}
                         item={item}
                         locale={locale}
+                        category={category}
                         onToggle={() => handleToggleItem(item)}
                         onCancel={() => firebaseService.cancelItem(item.id)}
                         onRestore={() => firebaseService.restoreItem(item.id)}
@@ -985,15 +987,36 @@ const ItemRow: React.FC<ItemRowProps> = ({
 }) => {
   const { t, getUnitName, getMemberName, getCategoryName } = useLanguage();
   const isCancelled = Boolean(item.cancelled);
+  const isMuted = isCancelled || item.completed;
+  const rowStyle = category
+    ? (() => {
+        const s = getCategoryTelegramStyle(
+          category.icon,
+          item.categoryId,
+          false,
+          isMuted,
+          { subtleWeb: true }
+        );
+        return {
+          backgroundColor: s.backgroundColor,
+          backgroundImage: s.backgroundImage,
+          backgroundRepeat: s.backgroundRepeat,
+          backgroundSize: s.backgroundSize,
+        };
+      })()
+    : undefined;
 
   return (
     <div
+      style={rowStyle}
       className={`group flex items-center justify-between px-4 py-3 transition-colors ${
-        isCancelled
-          ? 'bg-neutral-50/70'
-          : item.completed
-            ? 'bg-neutral-50/50'
-            : 'bg-white hover:bg-neutral-50/70'
+        rowStyle
+          ? ''
+          : isCancelled
+            ? 'bg-neutral-50/70'
+            : item.completed
+              ? 'bg-neutral-50/50'
+              : 'bg-white hover:bg-neutral-50/70'
       }`}
     >
       <div

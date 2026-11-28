@@ -11,6 +11,7 @@ import { firebaseService } from '../services/firebaseService';
 import { ANDROID_PROJECT_FILES, AndroidFile } from '../data/androidProjectFiles';
 import { useLanguage } from '../i18n/LanguageContext';
 import { APP_VERSION } from '../constants/version';
+import { getCategoryTelegramStyle } from '../utils/categoryTheme';
 import JSZip from 'jszip';
 import {
   Download,
@@ -163,72 +164,6 @@ const SIM_COLOR_SCHEMES: Record<
     names: { uk: 'Лаванда', ru: 'Лаванда', en: 'Lavender' },
   },
 };
-
-const SIM_LIGHT_GRADIENTS: Array<{ bg: string; border: string }> = [
-  { bg: 'linear-gradient(135deg, #F6FBF7, #E8F5EC)', border: '#D0E6D7' },
-  { bg: 'linear-gradient(90deg, #F5F9FD, #E6F0FA)', border: '#CEDEEB' },
-  { bg: 'radial-gradient(circle at 88% 15%, #F6ECDA, #FDF9F2)', border: '#EADBC0' },
-  { bg: 'linear-gradient(45deg, #FCF5F7, #F6E7EC)', border: '#E7D0D8' },
-  { bg: 'linear-gradient(135deg, #F8F6FC, #EDE8F8, #F8F6FC)', border: '#D9D0EB' },
-  { bg: 'linear-gradient(180deg, #F3FAFA, #E3F2F2)', border: '#C9E2E2' },
-  { bg: 'linear-gradient(135deg, #FDF7F3, #F7E9DF)', border: '#EAD3C3' },
-  { bg: 'linear-gradient(90deg, #F6F7FA, #E9EDF4)', border: '#D2D8E4' },
-  { bg: 'radial-gradient(circle at 88% 15%, #EBF2E2, #F7FAF3)', border: '#D5E1C7' },
-  { bg: 'linear-gradient(45deg, #F4F7FC, #E5ECFA)', border: '#CCD7EC' },
-  { bg: 'linear-gradient(135deg, #FAF7F2, #F1E9DD, #FAF7F2)', border: '#E0D4C3' },
-  { bg: 'linear-gradient(180deg, #FAF5FA, #F2E6F2)', border: '#E1CEE1' },
-  { bg: 'linear-gradient(135deg, #F3FAFC, #E3F3F8)', border: '#C9E3EC' },
-  { bg: 'linear-gradient(90deg, #FAFAF2, #F1F2DF)', border: '#DDDFC3' },
-  { bg: 'radial-gradient(circle at 88% 15%, #F5E6E1, #FCF6F4)', border: '#E4CFC8' },
-  { bg: 'linear-gradient(45deg, #F6F6FC, #E8E9F8)', border: '#D0D2EC' },
-  { bg: 'linear-gradient(135deg, #F4FAF7, #E5F2EC, #F4FAF7)', border: '#CCE2D7' },
-  { bg: 'linear-gradient(180deg, #FDFBF2, #F7F2DB)', border: '#E8E0C0' },
-  { bg: 'linear-gradient(135deg, #FDF5F5, #F7E5E5)', border: '#E8CECE' },
-  { bg: 'linear-gradient(90deg, #F8F8F8, #ECECEE)', border: '#D8D8DC' },
-];
-
-const SIM_DARK_GRADIENTS: Array<{ bg: string; border: string }> = [
-  { bg: 'linear-gradient(135deg, #17211C, #1E2D25)', border: '#2B4135' },
-  { bg: 'linear-gradient(90deg, #161E27, #1D2836)', border: '#2B3B4E' },
-  { bg: 'radial-gradient(circle at 88% 15%, #2D261E, #211C17)', border: '#42372C' },
-  { bg: 'linear-gradient(45deg, #22191D, #2E2027)', border: '#443039' },
-  { bg: 'linear-gradient(135deg, #1B1926, #252134, #1B1926)', border: '#36314D' },
-  { bg: 'linear-gradient(180deg, #152021, #1B2B2D)', border: '#284043' },
-  { bg: 'linear-gradient(135deg, #231B17, #30241E)', border: '#46352C' },
-  { bg: 'linear-gradient(90deg, #181C22, #212630)', border: '#313947' },
-  { bg: 'radial-gradient(circle at 88% 15%, #232C1D, #1A2016)', border: '#34412B' },
-  { bg: 'linear-gradient(45deg, #161B26, #1E2535)', border: '#2D374E' },
-  { bg: 'linear-gradient(135deg, #1F1C18, #2A2620, #1F1C18)', border: '#3E382F' },
-  { bg: 'linear-gradient(180deg, #201822, #2C202F)', border: '#412F45' },
-  { bg: 'linear-gradient(135deg, #151E23, #1C2930)', border: '#293C46' },
-  { bg: 'linear-gradient(90deg, #1D2016, #282C1E)', border: '#3B412C' },
-  { bg: 'radial-gradient(circle at 88% 15%, #2F2321, #221A19)', border: '#443330' },
-  { bg: 'linear-gradient(45deg, #191A26, #222435)', border: '#33364F' },
-  { bg: 'linear-gradient(135deg, #16211D, #1D2D27, #16211D)', border: '#2B4239' },
-  { bg: 'linear-gradient(180deg, #201E16, #2B281D)', border: '#403B2A' },
-  { bg: 'linear-gradient(135deg, #231819, #302022)', border: '#462F32' },
-  { bg: 'linear-gradient(90deg, #1A1B1E, #23252A)', border: '#34373F' },
-];
-
-function getSimCategoryGradient(
-  categoryId: string,
-  categories: Category[],
-  isDark: boolean
-): { bg: string; border: string } {
-  const idx = categories.findIndex((c) => c.id === categoryId);
-  let slot = 0;
-  if (idx >= 0) {
-    slot = idx % 20;
-  } else {
-    let hash = 0;
-    for (let i = 0; i < categoryId.length; i++) {
-      hash = (hash * 31 + categoryId.charCodeAt(i)) | 0;
-    }
-    slot = Math.abs(hash) % 20;
-  }
-  const list = isDark ? SIM_DARK_GRADIENTS : SIM_LIGHT_GRADIENTS;
-  return list[slot];
-}
 
 export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
   items,
@@ -863,9 +798,9 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                             }
                           }
                           const trimmedNote = item.note?.trim() || '';
-                          const catGrad = simCategoryBgEnabled
-                            ? getSimCategoryGradient(item.categoryId, categories, simDark)
-                            : null;
+                          const catThemeStyle = simCategoryBgEnabled
+                            ? getCategoryTelegramStyle(cat?.icon, item.categoryId, simDark, isMuted)
+                            : undefined;
 
                           return (
                             <div
@@ -875,17 +810,9 @@ export const AndroidCompanionHub: React.FC<AndroidCompanionHubProps> = ({
                                   ? firebaseService.restoreItem(item.id)
                                   : firebaseService.toggleItem(item.id)
                               }
-                              style={
-                                catGrad
-                                  ? {
-                                      backgroundImage: catGrad.bg,
-                                      borderColor: catGrad.border,
-                                      opacity: isMuted ? 0.72 : 1,
-                                    }
-                                  : undefined
-                              }
+                              style={catThemeStyle}
                               className={`rounded-lg border p-3 cursor-pointer transition-colors ${
-                                catGrad
+                                catThemeStyle
                                   ? ''
                                   : simDark
                                     ? isMuted

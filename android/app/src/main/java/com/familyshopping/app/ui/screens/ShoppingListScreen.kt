@@ -87,7 +87,9 @@ import com.familyshopping.app.data.model.RecentItem
 import com.familyshopping.app.data.model.ShoppingItem
 import com.familyshopping.app.ui.AppStrings
 import com.familyshopping.app.ui.theme.LocalAppExtendedColors
-import com.familyshopping.app.ui.theme.categoryGradientSpec
+import com.familyshopping.app.ui.theme.borderColor
+import com.familyshopping.app.ui.theme.drawTelegramCategoryBackground
+import com.familyshopping.app.ui.theme.resolveIconVisual
 
 private enum class AndroidStatusFilter {
     PENDING,
@@ -580,7 +582,7 @@ fun ShoppingListScreen(
                                     item = item,
                                     lang = lang,
                                     categoryLabel = cat?.let { "${it.icon} ${AppStrings.categoryName(it, lang)}" } ?: "",
-                                    categories = categories,
+                                    categoryIcon = cat?.icon,
                                     showAddedBy = showAddedBy,
                                     showTimestamps = showTimestamps,
                                     categoryBackgroundsEnabled = categoryBackgroundsEnabled,
@@ -598,7 +600,7 @@ fun ShoppingListScreen(
                                 item = item,
                                 lang = lang,
                                 categoryLabel = cat?.let { "${it.icon} ${AppStrings.categoryName(it, lang)}" } ?: "",
-                                categories = categories,
+                                categoryIcon = cat?.icon,
                                 showAddedBy = showAddedBy,
                                 showTimestamps = showTimestamps,
                                 categoryBackgroundsEnabled = categoryBackgroundsEnabled,
@@ -793,7 +795,7 @@ fun ShoppingItemRow(
     item: ShoppingItem,
     lang: String,
     categoryLabel: String,
-    categories: List<Category>,
+    categoryIcon: String?,
     showAddedBy: Boolean,
     showTimestamps: Boolean,
     categoryBackgroundsEnabled: Boolean,
@@ -805,18 +807,15 @@ fun ShoppingItemRow(
     val extended = LocalAppExtendedColors.current
     val isMuted = item.completed || item.cancelled
     val cardShape = RoundedCornerShape(10.dp)
-    val gradientSpec = remember(item.categoryId, categories, extended.isDark, categoryBackgroundsEnabled) {
+    val iconVisual = remember(categoryIcon, item.categoryId, categoryBackgroundsEnabled) {
         if (categoryBackgroundsEnabled) {
-            categoryGradientSpec(item.categoryId, categories, extended.isDark)
+            resolveIconVisual(categoryIcon, item.categoryId)
         } else {
             null
         }
     }
-    val borderColor = when {
-        gradientSpec != null && isMuted -> gradientSpec.borderColor.copy(alpha = 0.5f)
-        gradientSpec != null -> gradientSpec.borderColor
-        else -> extended.cardBorder
-    }
+    val borderColor = iconVisual?.borderColor(isDark = extended.isDark, isMuted = isMuted)
+        ?: extended.cardBorder
 
     Card(
         modifier = Modifier
@@ -826,7 +825,7 @@ fun ShoppingItemRow(
         shape = cardShape,
         border = BorderStroke(1.dp, borderColor),
         colors = CardDefaults.cardColors(
-            containerColor = if (gradientSpec != null) {
+            containerColor = if (iconVisual != null) {
                 Color.Transparent
             } else if (isMuted) {
                 extended.cardCompletedSurface
@@ -842,14 +841,13 @@ fun ShoppingItemRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (gradientSpec != null) {
+                    if (iconVisual != null) {
                         Modifier.drawBehind {
-                            drawRect(
-                                brush = gradientSpec.toBrush(
-                                    width = size.width,
-                                    height = size.height,
-                                    mutedTarget = if (isMuted) extended.cardCompletedSurface else null
-                                )
+                            drawTelegramCategoryBackground(
+                                visual = iconVisual,
+                                isDark = extended.isDark,
+                                isMuted = isMuted,
+                                mutedTarget = extended.cardCompletedSurface
                             )
                         }
                     } else {
