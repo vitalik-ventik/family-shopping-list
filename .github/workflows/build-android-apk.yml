@@ -49,7 +49,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon --stacktrace --console=plain
+        run: gradle assembleDebug -PappVersionCode=$((${{ github.run_number }} + 10)) --no-daemon --stacktrace --console=plain
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v7

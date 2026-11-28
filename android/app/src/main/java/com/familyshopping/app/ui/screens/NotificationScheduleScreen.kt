@@ -27,6 +27,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -42,13 +43,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familyshopping.app.data.model.Category
 import com.familyshopping.app.data.model.NotificationSchedule
 import com.familyshopping.app.ui.AppStrings
+import com.familyshopping.app.ui.theme.LocalAppExtendedColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,6 +63,7 @@ fun NotificationScheduleScreen(
     onBack: () -> Unit
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
+    val extended = LocalAppExtendedColors.current
 
     Scaffold(
         topBar = {
@@ -77,8 +79,8 @@ fun NotificationScheduleScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showCreateDialog = true },
-                containerColor = Color(0xFF18181B),
-                contentColor = Color.White
+                containerColor = extended.fabContainer,
+                contentColor = extended.fabContent
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add schedule")
             }
@@ -94,19 +96,19 @@ fun NotificationScheduleScreen(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F4F5)),
+                    colors = CardDefaults.cardColors(containerColor = extended.infoCardSurface),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
                         modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Notifications, contentDescription = null, tint = Color(0xFF18181B))
+                        Icon(Icons.Default.Notifications, contentDescription = null, tint = extended.titleText)
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = AppStrings.remindersDesc(lang),
                             fontSize = 12.sp,
-                            color = Color(0xFF52525B)
+                            color = extended.mutedText
                         )
                     }
                 }
@@ -116,8 +118,8 @@ fun NotificationScheduleScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    colors = CardDefaults.cardColors(containerColor = extended.cardSurface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (extended.isDark) 0.dp else 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Row(
@@ -126,11 +128,16 @@ fun NotificationScheduleScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(schedule.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(
+                                    schedule.title,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    color = extended.titleText
+                                )
                                 Text(
                                     text = schedule.time,
                                     fontSize = 13.sp,
-                                    color = Color(0xFF059669),
+                                    color = extended.accentSuccess,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -151,7 +158,7 @@ fun NotificationScheduleScreen(
                         Text(
                             text = catSummary,
                             fontSize = 12.sp,
-                            color = Color(0xFF71717A)
+                            color = extended.subtleText
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))

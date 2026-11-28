@@ -49,10 +49,11 @@ class ShoppingReminderWorker(
 
         // 1. Retrieve dynamic Firebase configuration from SharedPreferences
         val prefs = context.getSharedPreferences("family_shopping_prefs", Context.MODE_PRIVATE)
-        val apiKey = prefs.getString("firebase_api_key", "") ?: ""
-        val projectId = prefs.getString("firebase_project_id", "") ?: ""
-        val appId = prefs.getString("firebase_app_id", "") ?: ""
-        val groupId = prefs.getString("firebase_group_id", "default-family") ?: "default-family"
+        val apiKey = (prefs.getString("firebase_api_key", "") ?: "").trim()
+        val projectId = (prefs.getString("firebase_project_id", "") ?: "").trim()
+        val appId = (prefs.getString("firebase_app_id", "") ?: "").trim()
+        val storageBucket = (prefs.getString("firebase_storage_bucket", "") ?: "").trim()
+        val groupId = (prefs.getString("firebase_group_id", "my-family") ?: "my-family").trim().ifBlank { "my-family" }
 
         if (apiKey.isBlank() || projectId.isBlank() || appId.isBlank()) {
             Log.w(TAG, "Firebase credentials not configured yet in Settings. Skipping background check.")
@@ -61,16 +62,18 @@ class ShoppingReminderWorker(
 
         try {
             // 2. Ensure dynamic FirebaseApp instance is initialized for this group
-            val appName = "family_sync_${projectId}_${groupId}"
+            val appName = "app_${projectId}_$groupId"
             val firebaseApp = try {
                 FirebaseApp.getInstance(appName)
-            } catch (e: IllegalStateException) {
-                val options = FirebaseOptions.Builder()
+            } catch (_: IllegalStateException) {
+                val optionsBuilder = FirebaseOptions.Builder()
                     .setApiKey(apiKey)
                     .setProjectId(projectId)
                     .setApplicationId(appId)
-                    .build()
-                FirebaseApp.initializeApp(context, options, appName)
+                if (storageBucket.isNotBlank()) {
+                    optionsBuilder.setStorageBucket(storageBucket)
+                }
+                FirebaseApp.initializeApp(context, optionsBuilder.build(), appName)
             }
 
             val firestore = FirebaseFirestore.getInstance(firebaseApp)
@@ -88,7 +91,7 @@ class ShoppingReminderWorker(
                 if (doc.getBoolean("cancelled") == true) return@mapNotNull null
                 val title = doc.getString("title") ?: return@mapNotNull null
                 val catId = doc.getString("categoryId") ?: ""
-                val quantity = doc.getDouble("quantity")?.toInt() ?: 1
+                val quantity = (doc.get("quantity") as? Number)?.toInt() ?: 1
                 val unit = doc.getString("unit") ?: ""
                 if (monitoredCategoryIds.isEmpty() || monitoredCategoryIds.contains(catId)) {
                     "$title (${quantity}${if (unit.isNotBlank()) " $unit" else ""})"

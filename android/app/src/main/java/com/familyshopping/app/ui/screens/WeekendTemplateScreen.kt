@@ -31,12 +31,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.familyshopping.app.data.model.ShoppingTemplate
 import com.familyshopping.app.ui.AppStrings
+import com.familyshopping.app.ui.theme.LocalAppExtendedColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +46,8 @@ fun WeekendTemplateScreen(
     onApplyTemplate: (ShoppingTemplate, Boolean) -> Unit,
     onBack: () -> Unit
 ) {
+    val extended = LocalAppExtendedColors.current
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -69,25 +71,30 @@ fun WeekendTemplateScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    colors = CardDefaults.cardColors(containerColor = extended.cardSurface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (extended.isDark) 0.dp else 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(template.icon, fontSize = 26.sp)
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(template.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                                Text(
+                                    template.name,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 16.sp,
+                                    color = extended.titleText
+                                )
                                 Text(
                                     text = "${template.items.size} items • ${template.tag}",
                                     fontSize = 12.sp,
-                                    color = Color(0xFF71717A)
+                                    color = extended.subtleText
                                 )
                             }
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(template.description, fontSize = 13.sp, color = Color(0xFF52525B))
+                        Text(template.description, fontSize = 13.sp, color = extended.mutedText)
 
                         Spacer(modifier = Modifier.height(10.dp))
                         val previewText = template.items.take(5).joinToString(", ") { it.title } +
@@ -112,7 +119,10 @@ fun WeekendTemplateScreen(
                             Button(
                                 onClick = { onApplyTemplate(template, true) },
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF18181B))
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
                             ) {
                                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))

@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -47,6 +50,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -54,6 +58,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,7 +68,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,6 +86,8 @@ import com.familyshopping.app.data.model.Category
 import com.familyshopping.app.data.model.RecentItem
 import com.familyshopping.app.data.model.ShoppingItem
 import com.familyshopping.app.ui.AppStrings
+import com.familyshopping.app.ui.theme.LocalAppExtendedColors
+import com.familyshopping.app.ui.theme.categoryGradientSpec
 
 private enum class AndroidStatusFilter {
     PENDING,
@@ -100,12 +111,18 @@ fun ShoppingListScreen(
     categories: List<Category>,
     recentItems: List<RecentItem>,
     isConnected: Boolean,
+    isRefreshing: Boolean,
+    syncError: String?,
     lang: String,
+    showAddedBy: Boolean,
+    showTimestamps: Boolean,
+    categoryBackgroundsEnabled: Boolean,
+    onRefresh: () -> Unit,
     onChangeLanguage: (String) -> Unit,
     onToggleItem: (ShoppingItem) -> Unit,
     onCancelItem: (ShoppingItem) -> Unit,
     onRestoreItem: (ShoppingItem) -> Unit,
-    onAddItem: (String, String, Int, String, Boolean) -> Unit,
+    onAddItem: (String, String, Int, String, Boolean, String?) -> Unit,
     onDeleteItem: (String) -> Unit,
     onClearCompleted: () -> Unit,
     onClearCancelled: () -> Unit,
@@ -113,17 +130,20 @@ fun ShoppingListScreen(
     onOpenNotifications: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val extended = LocalAppExtendedColors.current
     var showAddDialog by remember { mutableStateOf(false) }
     var showLangMenu by remember { mutableStateOf(false) }
     var statusFilter by remember { mutableStateOf(AndroidStatusFilter.PENDING) }
     var selectedCategoryFilter by remember { mutableStateOf<String?>(null) }
     var pendingConfirmAction by remember { mutableStateOf<PendingConfirmAction?>(null) }
+    var weeksLoaded by remember { mutableIntStateOf(0) }
+    var showAllHistory by remember { mutableStateOf(false) }
 
     val pendingCount = items.count { !it.completed && !it.cancelled }
     val urgentCount = items.count { !it.completed && !it.cancelled && it.urgent }
     val completedCount = items.count { it.completed && !it.cancelled }
     val cancelledCount = items.count { it.cancelled }
-    val allNonCancelledCount = items.count { !it.cancelled }
+    val allTotalCount = items.size
 
     LaunchedEffect(urgentCount, statusFilter) {
         if (statusFilter == AndroidStatusFilter.URGENT && urgentCount == 0) {
@@ -131,13 +151,44 @@ fun ShoppingListScreen(
         }
     }
 
-    val itemsInStatus = remember(items, statusFilter) {
+    LaunchedEffect(statusFilter) {
+        weeksLoaded = 0
+        showAllHistory = false
+    }
+
+    val isDatePaginatedSection =
+        statusFilter == AndroidStatusFilter.ALL ||
+            statusFilter == AndroidStatusFilter.COMPLETED ||
+            statusFilter == AndroidStatusFilter.CANCELLED
+
+    val todayStart = remember(items) { startOfTodayMillis() }
+    val windowStart = remember(todayStart, weeksLoaded) {
+        if (weeksLoaded <= 0) todayStart else subtractDaysFromStartOfDay(todayStart, weeksLoaded * 7)
+    }
+
+    val sectionPool = remember(items, statusFilter) {
         when (statusFilter) {
             AndroidStatusFilter.PENDING -> items.filter { !it.completed && !it.cancelled }
             AndroidStatusFilter.URGENT -> items.filter { !it.completed && !it.cancelled && it.urgent }
             AndroidStatusFilter.COMPLETED -> items.filter { it.completed && !it.cancelled }
             AndroidStatusFilter.CANCELLED -> items.filter { it.cancelled }
-            AndroidStatusFilter.ALL -> items.filter { !it.cancelled }
+            AndroidStatusFilter.ALL -> items
+        }
+    }
+
+    val itemsInStatus = remember(sectionPool, statusFilter, isDatePaginatedSection, showAllHistory, windowStart) {
+        if (!isDatePaginatedSection) {
+            sectionPool
+        } else if (showAllHistory) {
+            sectionPool.sortedByDescending { itemActionTimestamp(it) }
+        } else if (statusFilter == AndroidStatusFilter.ALL) {
+            sectionPool
+                .filter { (!it.completed && !it.cancelled) || itemActionTimestamp(it) >= windowStart }
+                .sortedByDescending { itemActionTimestamp(it) }
+        } else {
+            sectionPool
+                .filter { itemActionTimestamp(it) >= windowStart }
+                .sortedByDescending { itemActionTimestamp(it) }
         }
     }
 
@@ -160,6 +211,41 @@ fun ShoppingListScreen(
     } else {
         itemsInStatus.filter { it.categoryId == selectedCategoryFilter }
     }
+
+    val olderHiddenCount = remember(sectionPool, selectedCategoryFilter, isDatePaginatedSection, showAllHistory, statusFilter, windowStart) {
+        if (!isDatePaginatedSection || showAllHistory) {
+            0
+        } else {
+            val catFilteredPool = if (selectedCategoryFilter == null) {
+                sectionPool
+            } else {
+                sectionPool.filter { it.categoryId == selectedCategoryFilter }
+            }
+            catFilteredPool.count { item ->
+                val isHistoricalStatus = if (statusFilter == AndroidStatusFilter.ALL) {
+                    item.completed || item.cancelled
+                } else {
+                    true
+                }
+                isHistoricalStatus && itemActionTimestamp(item) < windowStart
+            }
+        }
+    }
+
+    val groupedByDay = remember(displayedItems, isDatePaginatedSection, todayStart) {
+        if (!isDatePaginatedSection) {
+            emptyList()
+        } else {
+            displayedItems
+                .groupBy { item ->
+                    val ts = itemActionTimestamp(item)
+                    if (ts > 0L) startOfDayMillis(ts) else todayStart
+                }
+                .entries
+                .sortedByDescending { it.key }
+                .map { it.key to it.value }
+        }
+    }
     val categoryMap = remember(categories) { categories.associateBy { it.id } }
 
     Scaffold(
@@ -175,7 +261,7 @@ fun ShoppingListScreen(
                         Text(
                             text = AppStrings.subtitleStatus(lang, pendingCount, isConnected),
                             fontSize = 12.sp,
-                            color = if (isConnected) Color(0xFF059669) else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isConnected) extended.accentSuccess else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
@@ -189,7 +275,7 @@ fun ShoppingListScreen(
                                 text = AppStrings.langCodeLabel(lang),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF18181B)
+                                color = extended.titleText
                             )
                         }
                         DropdownMenu(
@@ -241,8 +327,8 @@ fun ShoppingListScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = Color(0xFF18181B),
-                contentColor = Color.White
+                containerColor = extended.fabContainer,
+                contentColor = extended.fabContent
             ) {
                 Icon(Icons.Default.Add, contentDescription = AppStrings.addItemTitle(lang))
             }
@@ -253,44 +339,6 @@ fun ShoppingListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Minimal Weekend Template Shortcut
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .clickable { onOpenWeekendTemplate() },
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFAFA)),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🛒", fontSize = 22.sp)
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = AppStrings.weekendMasterTitle(lang),
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp,
-                            color = Color(0xFF18181B)
-                        )
-                        Text(
-                            text = AppStrings.loadOneTap(lang),
-                            fontSize = 12.sp,
-                            color = Color(0xFF71717A)
-                        )
-                    }
-                    Button(
-                        onClick = onOpenWeekendTemplate,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF18181B)),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(AppStrings.loadOneTap(lang), fontSize = 12.sp)
-                    }
-                }
-            }
-
             // Status Filter Tabs (Default: Pending / До покупки)
             LazyRow(
                 modifier = Modifier
@@ -342,7 +390,7 @@ fun ShoppingListScreen(
                         selected = statusFilter == AndroidStatusFilter.ALL,
                         onClick = { statusFilter = AndroidStatusFilter.ALL },
                         label = {
-                            Text(AppStrings.statusAll(lang, allNonCancelledCount), fontSize = 12.sp)
+                            Text(AppStrings.statusAll(lang, allTotalCount), fontSize = 12.sp)
                         }
                     )
                 }
@@ -384,102 +432,227 @@ fun ShoppingListScreen(
                 }
             }
 
-            // Shopping List
-            LazyColumn(
+            if (!syncError.isNullOrBlank()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable { onRefresh() },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (extended.isDark) Color(0xFF3A1D21) else Color(0xFFFEF2F2)
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        if (extended.isDark) Color(0xFF6B2D35) else Color(0xFFFECACA)
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = AppStrings.syncErrorBanner(lang, syncError),
+                        fontSize = 12.sp,
+                        color = extended.accentError,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
+            // Shopping List with Pull-Down-to-Refresh
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = onRefresh,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(top = 6.dp, bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .weight(1f)
+                    .fillMaxWidth()
             ) {
-                if ((statusFilter == AndroidStatusFilter.COMPLETED || statusFilter == AndroidStatusFilter.ALL) && completedCount > 0) {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 2.dp, bottom = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = AppStrings.doneHeader(lang, completedCount),
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            TextButton(onClick = { pendingConfirmAction = PendingConfirmAction.ClearCompleted }) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(top = 6.dp, bottom = 88.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if ((statusFilter == AndroidStatusFilter.COMPLETED || statusFilter == AndroidStatusFilter.ALL) && completedCount > 0) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp, bottom = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = AppStrings.clearDone(lang),
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontSize = 12.sp
+                                    text = AppStrings.doneHeader(lang, completedCount),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                TextButton(onClick = { pendingConfirmAction = PendingConfirmAction.ClearCompleted }) {
+                                    Text(
+                                        text = AppStrings.clearDone(lang),
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                if (statusFilter == AndroidStatusFilter.CANCELLED && cancelledCount > 0) {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 2.dp, bottom = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = AppStrings.cancelledHeader(lang, cancelledCount),
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp,
-                                color = Color(0xFFB45309)
-                            )
-                            TextButton(onClick = { pendingConfirmAction = PendingConfirmAction.ClearCancelled }) {
+                    if (statusFilter == AndroidStatusFilter.CANCELLED && cancelledCount > 0) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp, bottom = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = AppStrings.clearCancelled(lang),
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontSize = 12.sp
+                                    text = AppStrings.cancelledHeader(lang, cancelledCount),
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    color = extended.accentWarning
                                 )
+                                TextButton(onClick = { pendingConfirmAction = PendingConfirmAction.ClearCancelled }) {
+                                    Text(
+                                        text = AppStrings.clearCancelled(lang),
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                if (displayedItems.isEmpty()) {
-                    item {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 20.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White)
-                        ) {
+                    if (displayedItems.isEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = extended.cardSurface)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = if (olderHiddenCount > 0) {
+                                            AppStrings.emptyTodayWithOlderMessage(lang)
+                                        } else {
+                                            AppStrings.emptyMessage(lang, statusFilter.name)
+                                        },
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = extended.subtleText
+                                    )
+                                }
+                            }
+                        }
+                    } else if (isDatePaginatedSection) {
+                        groupedByDay.forEach { (dayStartMillis, dayItems) ->
+                            item(key = "day_header_$dayStartMillis") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp, bottom = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = formatDayHeaderLabel(dayStartMillis, lang),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = extended.mutedText
+                                    )
+                                    Text(
+                                        text = "${dayItems.size}",
+                                        fontSize = 11.sp,
+                                        color = extended.subtleText
+                                    )
+                                }
+                            }
+                            items(dayItems, key = { it.id }) { item ->
+                                val cat = categoryMap[item.categoryId]
+                                ShoppingItemRow(
+                                    item = item,
+                                    lang = lang,
+                                    categoryLabel = cat?.let { "${it.icon} ${AppStrings.categoryName(it, lang)}" } ?: "",
+                                    categories = categories,
+                                    showAddedBy = showAddedBy,
+                                    showTimestamps = showTimestamps,
+                                    categoryBackgroundsEnabled = categoryBackgroundsEnabled,
+                                    onToggle = { onToggleItem(item) },
+                                    onCancel = { pendingConfirmAction = PendingConfirmAction.CancelItem(item) },
+                                    onRestore = { onRestoreItem(item) },
+                                    onDelete = { pendingConfirmAction = PendingConfirmAction.DeleteItem(item) }
+                                )
+                            }
+                        }
+                    } else {
+                        items(displayedItems, key = { it.id }) { item ->
+                            val cat = categoryMap[item.categoryId]
+                            ShoppingItemRow(
+                                item = item,
+                                lang = lang,
+                                categoryLabel = cat?.let { "${it.icon} ${AppStrings.categoryName(it, lang)}" } ?: "",
+                                categories = categories,
+                                showAddedBy = showAddedBy,
+                                showTimestamps = showTimestamps,
+                                categoryBackgroundsEnabled = categoryBackgroundsEnabled,
+                                onToggle = { onToggleItem(item) },
+                                onCancel = { pendingConfirmAction = PendingConfirmAction.CancelItem(item) },
+                                onRestore = { onRestoreItem(item) },
+                                onDelete = { pendingConfirmAction = PendingConfirmAction.DeleteItem(item) }
+                            )
+                        }
+                    }
+
+                    if (isDatePaginatedSection && !showAllHistory && olderHiddenCount > 0) {
+                        item(key = "history_pagination_controls") {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                    .padding(top = 8.dp, bottom = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = AppStrings.emptyMessage(lang, statusFilter.name),
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFF71717A)
+                                    text = AppStrings.olderItemsHiddenLabel(
+                                        lang = lang,
+                                        count = olderHiddenCount,
+                                        fromDate = formatShortDate(windowStart)
+                                    ),
+                                    fontSize = 11.sp,
+                                    color = extended.subtleText
                                 )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { weeksLoaded += 1 },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(AppStrings.showMoreWeekBtn(lang), fontSize = 13.sp)
+                                    }
+                                    Button(
+                                        onClick = { showAllHistory = true },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        ),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(AppStrings.showAllHistoryBtn(lang), fontSize = 13.sp)
+                                    }
+                                }
                             }
                         }
-                    }
-                } else {
-                    items(displayedItems, key = { it.id }) { item ->
-                        val cat = categoryMap[item.categoryId]
-                        ShoppingItemRow(
-                            item = item,
-                            lang = lang,
-                            categoryLabel = cat?.let { "${it.icon} ${AppStrings.categoryName(it, lang)}" } ?: "",
-                            onToggle = { onToggleItem(item) },
-                            onCancel = { pendingConfirmAction = PendingConfirmAction.CancelItem(item) },
-                            onRestore = { onRestoreItem(item) },
-                            onDelete = { pendingConfirmAction = PendingConfirmAction.DeleteItem(item) }
-                        )
                     }
                 }
             }
@@ -522,7 +695,10 @@ fun ShoppingListScreen(
                         }
                         pendingConfirmAction = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = confirmBtnColor)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = confirmBtnColor,
+                        contentColor = Color.White
+                    )
                 ) {
                     Text(confirmBtnLabel)
                 }
@@ -546,12 +722,60 @@ fun ShoppingListScreen(
             lang = lang,
             defaultCategoryId = selectedCategoryFilter ?: categories.firstOrNull()?.id ?: "cat_produce",
             onDismiss = { showAddDialog = false },
-            onConfirm = { title, catId, qty, unit, urgent ->
-                onAddItem(title, catId, qty, unit, urgent)
+            onConfirm = { title, catId, qty, unit, urgent, note ->
+                onAddItem(title, catId, qty, unit, urgent, note)
                 showAddDialog = false
             }
         )
     }
+}
+
+private fun itemActionTimestamp(item: ShoppingItem): Long = when {
+    item.cancelled -> item.cancelledAt ?: item.createdAt
+    item.completed -> item.completedAt ?: item.createdAt
+    else -> item.createdAt
+}
+
+private fun startOfDayMillis(ts: Long): Long {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = ts
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}
+
+private fun startOfTodayMillis(): Long = startOfDayMillis(System.currentTimeMillis())
+
+private fun subtractDaysFromStartOfDay(dayStartMillis: Long, days: Int): Long {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = dayStartMillis
+        add(Calendar.DAY_OF_YEAR, -days)
+    }
+    return cal.timeInMillis
+}
+
+private fun formatShortDate(ts: Long): String =
+    SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(ts))
+
+private fun formatDayHeaderLabel(dayStartMillis: Long, lang: String): String {
+    val today = startOfTodayMillis()
+    val yesterday = subtractDaysFromStartOfDay(today, 1)
+    if (dayStartMillis == today) return AppStrings.todayLabel(lang)
+    if (dayStartMillis == yesterday) return AppStrings.yesterdayLabel(lang)
+
+    val dayCal = Calendar.getInstance().apply { timeInMillis = dayStartMillis }
+    val nowCal = Calendar.getInstance()
+    val sameYear = dayCal.get(Calendar.YEAR) == nowCal.get(Calendar.YEAR)
+    val locale = when (lang) {
+        "ru" -> Locale("ru")
+        "en" -> Locale.ENGLISH
+        else -> Locale("uk")
+    }
+    val pattern = if (sameYear) "d MMMM" else "d MMMM yyyy"
+    return SimpleDateFormat(pattern, locale).format(Date(dayStartMillis))
 }
 
 private fun formatAndroidTimestamp(ts: Long): String {
@@ -563,126 +787,238 @@ private fun formatAndroidTimestamp(ts: Long): String {
     return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(ts))
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ShoppingItemRow(
     item: ShoppingItem,
     lang: String,
     categoryLabel: String,
+    categories: List<Category>,
+    showAddedBy: Boolean,
+    showTimestamps: Boolean,
+    categoryBackgroundsEnabled: Boolean,
     onToggle: () -> Unit,
     onCancel: () -> Unit,
     onRestore: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val extended = LocalAppExtendedColors.current
+    val isMuted = item.completed || item.cancelled
+    val cardShape = RoundedCornerShape(10.dp)
+    val gradientSpec = remember(item.categoryId, categories, extended.isDark, categoryBackgroundsEnabled) {
+        if (categoryBackgroundsEnabled) {
+            categoryGradientSpec(item.categoryId, categories, extended.isDark)
+        } else {
+            null
+        }
+    }
+    val borderColor = when {
+        gradientSpec != null && isMuted -> gradientSpec.borderColor.copy(alpha = 0.5f)
+        gradientSpec != null -> gradientSpec.borderColor
+        else -> extended.cardBorder
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(cardShape)
             .clickable { if (item.cancelled) onRestore() else onToggle() },
-        shape = RoundedCornerShape(10.dp),
+        shape = cardShape,
+        border = BorderStroke(1.dp, borderColor),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.completed || item.cancelled) Color(0xFFF4F4F5) else Color.White
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (item.completed || item.cancelled) 0.dp else 1.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (item.cancelled) {
-                IconButton(onClick = onRestore, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = "Restore",
-                        tint = Color(0xFF059669),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            containerColor = if (gradientSpec != null) {
+                Color.Transparent
+            } else if (isMuted) {
+                extended.cardCompletedSurface
             } else {
-                Checkbox(checked = item.completed, onCheckedChange = { onToggle() })
+                extended.cardSurface
             }
-            Spacer(modifier = Modifier.width(6.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 15.sp,
-                    textDecoration = if (item.completed || item.cancelled) TextDecoration.LineThrough else TextDecoration.None,
-                    color = if (item.completed || item.cancelled) Color(0xFF71717A) else Color(0xFF18181B)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isMuted || extended.isDark) 0.dp else 1.dp
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (gradientSpec != null) {
+                        Modifier.drawBehind {
+                            drawRect(
+                                brush = gradientSpec.toBrush(
+                                    width = size.width,
+                                    height = size.height,
+                                    mutedTarget = if (isMuted) extended.cardCompletedSurface else null
+                                )
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (item.quantity > 0 || item.unit.isNotBlank()) {
-                        Text(
-                            text = "${item.quantity} ${item.unit}".trim(),
-                            fontSize = 12.sp,
-                            color = Color(0xFF71717A)
-                        )
-                    }
-                    if (categoryLabel.isNotBlank()) {
-                        Text(
-                            text = categoryLabel,
-                            fontSize = 12.sp,
-                            color = Color(0xFF71717A)
-                        )
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.wrapContentWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (item.cancelled) {
+                        IconButton(onClick = onRestore, modifier = Modifier.size(44.dp)) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Restore",
+                                tint = extended.accentSuccess,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.size(44.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Checkbox(
+                                checked = item.completed,
+                                onCheckedChange = { onToggle() },
+                                modifier = Modifier.scale(1.3f)
+                            )
+                        }
                     }
                 }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = item.title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textDecoration = if (isMuted) TextDecoration.LineThrough else TextDecoration.None,
+                            color = if (isMuted) extended.subtleText else extended.titleText,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (item.urgent && !isMuted) {
+                            Surface(
+                                color = extended.urgentBadgeBg,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "!",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = extended.urgentBadgeText
+                                )
+                            }
+                        }
+                    }
+
+                    val metaParts = buildList {
+                        if (categoryLabel.isNotBlank()) {
+                            add(Triple(categoryLabel, extended.subtleText, FontWeight.Normal))
+                        }
+                        if (item.quantity > 0 || item.unit.isNotBlank()) {
+                            add(Triple("${item.quantity} ${item.unit}".trim(), extended.subtleText, FontWeight.Normal))
+                        }
+                        if (showAddedBy && !item.addedBy.isNullOrBlank()) {
+                            add(Triple("👤 ${item.addedBy.trim()}", extended.subtleText, FontWeight.Normal))
+                        }
+                        if (showTimestamps) {
+                            if (item.createdAt > 0L) {
+                                add(
+                                    Triple(
+                                        AppStrings.addedPrefix(lang) + formatAndroidTimestamp(item.createdAt),
+                                        extended.subtleText,
+                                        FontWeight.Normal
+                                    )
+                                )
+                            }
+                            if (item.completed && !item.cancelled && item.completedAt != null) {
+                                val boughtText = AppStrings.boughtPrefix(lang).trimStart('•', ' ') +
+                                    formatAndroidTimestamp(item.completedAt)
+                                add(Triple(boughtText, extended.accentSuccess, FontWeight.Medium))
+                            }
+                            if (item.cancelled && item.cancelledAt != null) {
+                                val cancelledText = AppStrings.cancelledPrefix(lang).trimStart('•', ' ') +
+                                    formatAndroidTimestamp(item.cancelledAt)
+                                add(Triple(cancelledText, extended.accentWarning, FontWeight.Medium))
+                            }
+                        }
+                    }
+
+                    if (metaParts.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            metaParts.forEachIndexed { index, (text, color, weight) ->
+                                if (index > 0) {
+                                    Text(
+                                        text = "•",
+                                        fontSize = 11.sp,
+                                        color = extended.subtleText.copy(alpha = 0.65f)
+                                    )
+                                }
+                                Text(
+                                    text = text,
+                                    fontSize = 11.sp,
+                                    color = color,
+                                    fontWeight = weight
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.wrapContentWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (item.createdAt > 0L) {
-                        Text(
-                            text = AppStrings.addedPrefix(lang) + formatAndroidTimestamp(item.createdAt),
-                            fontSize = 11.sp,
-                            color = Color(0xFF71717A)
-                        )
+                    if (!item.cancelled) {
+                        IconButton(onClick = onCancel, modifier = Modifier.size(34.dp)) {
+                            Icon(
+                                Icons.Default.Block,
+                                contentDescription = "Cancel",
+                                tint = extended.accentWarning,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
-                    if (item.completed && !item.cancelled && item.completedAt != null) {
-                        Text(
-                            text = AppStrings.boughtPrefix(lang) + formatAndroidTimestamp(item.completedAt),
-                            fontSize = 11.sp,
-                            color = Color(0xFF059669),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    if (item.cancelled && item.cancelledAt != null) {
-                        Text(
-                            text = AppStrings.cancelledPrefix(lang) + formatAndroidTimestamp(item.cancelledAt),
-                            fontSize = 11.sp,
-                            color = Color(0xFFB45309),
-                            fontWeight = FontWeight.Medium
+                    IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "Delete",
+                            tint = extended.subtleText,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
             }
-            if (item.urgent && !item.completed && !item.cancelled) {
-                Surface(
-                    color = Color(0xFFFFE4E6),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = "!",
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFE11D48)
-                    )
-                }
-            }
-            if (!item.cancelled) {
-                IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Block,
-                        contentDescription = "Cancel",
-                        tint = Color(0xFFD97706),
-                        modifier = Modifier.size(17.dp)
-                    )
-                }
-            }
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Outlined.Delete,
-                    contentDescription = "Delete",
-                    tint = Color(0xFFA1A1AA),
-                    modifier = Modifier.size(18.dp)
+
+            val noteText = item.note?.trim().orEmpty()
+            if (noteText.isNotEmpty()) {
+                Text(
+                    text = noteText,
+                    fontStyle = FontStyle.Italic,
+                    fontSize = 12.sp,
+                    color = extended.mutedText,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
                 )
             }
         }
@@ -697,13 +1033,14 @@ private fun AddItemDialog(
     lang: String,
     defaultCategoryId: String,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Int, String, Boolean) -> Unit
+    onConfirm: (String, String, Int, String, Boolean, String?) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var dropdownExpanded by remember { mutableStateOf(true) }
     var selectedCategoryId by remember { mutableStateOf(defaultCategoryId) }
     var quantity by remember { mutableIntStateOf(1) }
     var unit by remember { mutableStateOf("pcs") }
+    var note by remember { mutableStateOf("") }
     var urgent by remember { mutableStateOf(false) }
 
     val categoryMap = remember(categories) { categories.associateBy { it.id } }
@@ -773,22 +1110,23 @@ private fun AddItemDialog(
                 )
 
                 if (dropdownExpanded && filteredRecent.isNotEmpty()) {
+                    val extendedDialog = LocalAppExtendedColors.current
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
-                        color = Color.White,
-                        border = BorderStroke(1.dp, Color(0xFFE4E4E7)),
+                        color = extendedDialog.cardSurface,
+                        border = BorderStroke(1.dp, extendedDialog.cardBorder),
                         shadowElevation = 2.dp
                     ) {
                         Column {
                             Text(
                                 text = AppStrings.usageOrderLabel(lang, filteredRecent.size),
                                 fontSize = 11.sp,
-                                color = Color(0xFF71717A),
+                                color = extendedDialog.subtleText,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                             )
-                            HorizontalDivider(color = Color(0xFFF4F4F5))
+                            HorizontalDivider(color = extendedDialog.dividerColor)
                             LazyColumn(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -809,7 +1147,8 @@ private fun AddItemDialog(
                                                     recent.categoryId,
                                                     recent.quantity,
                                                     recent.unit,
-                                                    false
+                                                    false,
+                                                    note.trim().takeIf { it.isNotEmpty() }
                                                 )
                                             }
                                             .padding(horizontal = 12.dp, vertical = 9.dp),
@@ -823,7 +1162,7 @@ private fun AddItemDialog(
                                             text = recent.title,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color(0xFF18181B),
+                                            color = extendedDialog.titleText,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
@@ -832,25 +1171,25 @@ private fun AddItemDialog(
                                             Text(
                                                 text = "${recent.quantity} ${recent.unit}",
                                                 fontSize = 11.sp,
-                                                color = Color(0xFF71717A)
+                                                color = extendedDialog.subtleText
                                             )
                                         }
                                         if (inList) {
                                             Text(
                                                 text = AppStrings.inListBadge(lang),
                                                 fontSize = 11.sp,
-                                                color = Color(0xFF059669),
+                                                color = extendedDialog.accentSuccess,
                                                 fontWeight = FontWeight.Medium
                                             )
                                         }
                                         Icon(
                                             Icons.Default.Add,
                                             contentDescription = null,
-                                            tint = Color(0xFF059669),
+                                            tint = extendedDialog.accentSuccess,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
-                                    HorizontalDivider(color = Color(0xFFF4F4F5))
+                                    HorizontalDivider(color = extendedDialog.dividerColor)
                                 }
                             }
                         }
@@ -893,6 +1232,15 @@ private fun AddItemDialog(
                     }
                 }
 
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text(AppStrings.noteLabel(lang)) },
+                    placeholder = { Text(AppStrings.notePlaceholder(lang)) },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -908,7 +1256,14 @@ private fun AddItemDialog(
                 onClick = {
                     val trimmed = title.trim()
                     if (trimmed.isNotEmpty()) {
-                        onConfirm(trimmed, selectedCategoryId, quantity, unit.trim(), urgent)
+                        onConfirm(
+                            trimmed,
+                            selectedCategoryId,
+                            quantity,
+                            unit.trim(),
+                            urgent,
+                            note.trim().takeIf { it.isNotEmpty() }
+                        )
                     }
                 },
                 enabled = title.isNotBlank()

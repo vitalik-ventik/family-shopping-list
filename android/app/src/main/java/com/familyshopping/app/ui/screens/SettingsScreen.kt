@@ -2,16 +2,22 @@ package com.familyshopping.app.ui.screens
 
 import android.net.Uri
 import android.util.Base64
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,13 +28,17 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -37,7 +47,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -47,23 +59,39 @@ import androidx.compose.ui.unit.sp
 import com.familyshopping.app.R
 import com.familyshopping.app.data.model.FirebaseConfig
 import com.familyshopping.app.ui.AppStrings
+import com.familyshopping.app.ui.theme.AppColorSchemeId
+import com.familyshopping.app.ui.theme.LocalAppExtendedColors
+import com.familyshopping.app.ui.theme.ThemeMode
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     currentConfig: FirebaseConfig,
     currentLanguage: String,
+    currentThemeMode: String,
+    currentColorSchemeId: String,
+    showAddedBy: Boolean,
+    showTimestamps: Boolean,
+    categoryBackgroundsEnabled: Boolean,
+    currentUserName: String,
     onChangeLanguage: (String) -> Unit,
+    onChangeThemeMode: (String) -> Unit,
+    onChangeColorScheme: (String) -> Unit,
+    onChangeShowAddedBy: (Boolean) -> Unit,
+    onChangeShowTimestamps: (Boolean) -> Unit,
+    onChangeCategoryBackgrounds: (Boolean) -> Unit,
+    onChangeUserName: (String) -> Unit,
     onTestConfig: suspend (FirebaseConfig) -> Result<String>,
     onSaveConfig: (FirebaseConfig) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val extended = LocalAppExtendedColors.current
     val appVersion = remember(context) {
         try {
             @Suppress("DEPRECATION")
@@ -77,8 +105,10 @@ fun SettingsScreen(
     var appId by remember { mutableStateOf(currentConfig.appId) }
     var storageBucket by remember { mutableStateOf(currentConfig.storageBucket) }
     var groupId by remember { mutableStateOf(currentConfig.groupId) }
+    var userNameInput by remember { mutableStateOf(currentUserName) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun buildConfig(): FirebaseConfig = FirebaseConfig(
@@ -89,6 +119,51 @@ fun SettingsScreen(
         groupId = groupId.trim().ifBlank { "default-family" },
         isConfigured = apiKey.isNotBlank() && projectId.isNotBlank() && appId.isNotBlank()
     )
+
+    fun saveAndConnect(cfg: FirebaseConfig, closeOnSuccess: Boolean) {
+        onChangeUserName(userNameInput)
+        val hasAnyKey = cfg.apiKey.isNotBlank() || cfg.projectId.isNotBlank() || cfg.appId.isNotBlank()
+        if (hasAnyKey && !cfg.isConfigured) {
+            isError = true
+            statusMessage = AppStrings.partialKeysError(currentLanguage)
+            return
+        }
+        if (!cfg.isConfigured) {
+            onSaveConfig(cfg)
+            isError = false
+            if (closeOnSuccess) {
+                onBack()
+            } else {
+                statusMessage = when (currentLanguage) {
+                    "ru" -> "Сохранено (Локальный режим)"
+                    "en" -> "Saved (Local Mode)"
+                    else -> "Збережено (Локальний режим)"
+                }
+            }
+            return
+        }
+
+        isSaving = true
+        isError = false
+        statusMessage = AppStrings.connectingStatus(currentLanguage)
+        scope.launch {
+            onTestConfig(cfg)
+                .onSuccess { msg ->
+                    onSaveConfig(cfg)
+                    isSaving = false
+                    isError = false
+                    statusMessage = msg
+                    if (closeOnSuccess) {
+                        onBack()
+                    }
+                }
+                .onFailure { err ->
+                    isSaving = false
+                    isError = true
+                    statusMessage = err.message ?: "Connection failed"
+                }
+        }
+    }
 
     fun applyRawPairingPayload(raw: String) {
         try {
@@ -126,12 +201,12 @@ fun SettingsScreen(
                 groupId = scannedGroupId,
                 isConfigured = scannedApiKey.isNotBlank() && scannedProjectId.isNotBlank() && scannedAppId.isNotBlank()
             )
-            onSaveConfig(newCfg)
-            isError = false
-            statusMessage = if (newCfg.isConfigured) {
-                "QR scanned & connected to \"$scannedGroupId\"!"
+            if (newCfg.isConfigured) {
+                saveAndConnect(newCfg, closeOnSuccess = true)
             } else {
-                "QR imported group \"$scannedGroupId\" (enter Firebase keys on PC first for cloud sync)"
+                onSaveConfig(newCfg)
+                isError = false
+                statusMessage = "QR imported group \"$scannedGroupId\" (enter Firebase keys on PC first for cloud sync)"
             }
         } catch (e: Exception) {
             isError = true
@@ -166,7 +241,10 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text(AppStrings.settingsTitle(currentLanguage), fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        onChangeUserName(userNameInput)
+                        onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
@@ -183,8 +261,8 @@ fun SettingsScreen(
         ) {
             // Language Selector Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F4F5)),
-                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = extended.infoCardSurface),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -192,12 +270,13 @@ fun SettingsScreen(
                         text = AppStrings.languageLabel(currentLanguage),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
-                        color = Color(0xFF18181B)
+                        color = extended.titleText
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         listOf(
                             "uk" to "Українська",
@@ -214,10 +293,174 @@ fun SettingsScreen(
                 }
             }
 
+            // Theme & Color Scheme Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = extended.infoCardSurface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = AppStrings.appearanceTitle(currentLanguage),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = extended.titleText
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        listOf(
+                            ThemeMode.SYSTEM.id to AppStrings.themeSystem(currentLanguage),
+                            ThemeMode.LIGHT.id to AppStrings.themeLight(currentLanguage),
+                            ThemeMode.DARK.id to AppStrings.themeDark(currentLanguage)
+                        ).forEach { (modeId, label) ->
+                            FilterChip(
+                                selected = currentThemeMode == modeId,
+                                onClick = { onChangeThemeMode(modeId) },
+                                label = { Text(label, fontSize = 12.sp) }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = extended.dividerColor)
+
+                    Text(
+                        text = AppStrings.colorSchemeTitle(currentLanguage),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = extended.titleText
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        AppColorSchemeId.entries.forEach { scheme ->
+                            val dotColor = if (extended.isDark) scheme.previewDark else scheme.previewLight
+                            FilterChip(
+                                selected = currentColorSchemeId == scheme.id,
+                                onClick = { onChangeColorScheme(scheme.id) },
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(dotColor)
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        AppStrings.colorSchemeName(scheme.id, currentLanguage),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Card Display Options
+            Card(
+                colors = CardDefaults.cardColors(containerColor = extended.infoCardSurface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = AppStrings.listDisplayTitle(currentLanguage),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = extended.titleText
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = AppStrings.showAddedByLabel(currentLanguage),
+                            fontSize = 13.sp,
+                            color = extended.titleText,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                        )
+                        Switch(
+                            checked = showAddedBy,
+                            onCheckedChange = onChangeShowAddedBy
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = AppStrings.showTimestampsLabel(currentLanguage),
+                            fontSize = 13.sp,
+                            color = extended.titleText,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                        )
+                        Switch(
+                            checked = showTimestamps,
+                            onCheckedChange = onChangeShowTimestamps
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = AppStrings.categoryBackgroundsLabel(currentLanguage),
+                            fontSize = 13.sp,
+                            color = extended.titleText,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                        )
+                        Switch(
+                            checked = categoryBackgroundsEnabled,
+                            onCheckedChange = onChangeCategoryBackgrounds
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+                    OutlinedTextField(
+                        value = userNameInput,
+                        onValueChange = {
+                            userNameInput = it
+                            onChangeUserName(it)
+                        },
+                        label = { Text(AppStrings.userNameLabel(currentLanguage)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
             Button(
                 onClick = { startQrScan() },
+                enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = extended.accentSuccess,
+                    contentColor = Color.White
+                ),
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Icon(Icons.Default.QrCodeScanner, contentDescription = null)
@@ -226,7 +469,7 @@ fun SettingsScreen(
             }
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F4F5)),
+                colors = CardDefaults.cardColors(containerColor = extended.infoCardSurface),
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -234,12 +477,12 @@ fun SettingsScreen(
                         text = AppStrings.groupIsolationTitle(currentLanguage),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
-                        color = Color(0xFF18181B)
+                        color = extended.titleText
                     )
                     Text(
                         text = AppStrings.groupIsolationDesc(currentLanguage),
                         fontSize = 12.sp,
-                        color = Color(0xFF52525B)
+                        color = extended.mutedText
                     )
                 }
             }
@@ -307,34 +550,30 @@ fun SettingsScreen(
                             }
                     }
                 },
+                enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(AppStrings.testConnectionBtn(currentLanguage))
             }
 
             Button(
-                onClick = {
-                    val newConfig = buildConfig()
-                    onSaveConfig(newConfig)
-                    isError = false
-                    statusMessage = if (newConfig.isConfigured) {
-                        when (currentLanguage) {
-                            "ru" -> "Сохранено и подключено!"
-                            "en" -> "Saved & connected!"
-                            else -> "Збережено та підключено!"
-                        }
-                    } else {
-                        when (currentLanguage) {
-                            "ru" -> "Сохранено (Локальный режим)"
-                            "en" -> "Saved (Local Mode)"
-                            else -> "Збережено (Локальний режим)"
-                        }
-                    }
-                },
+                onClick = { saveAndConnect(buildConfig(), closeOnSuccess = true) },
+                enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF18181B))
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Icon(Icons.Default.Check, contentDescription = null)
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Icon(Icons.Default.Check, contentDescription = null)
+                }
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(AppStrings.saveBtn(currentLanguage))
             }
@@ -342,7 +581,7 @@ fun SettingsScreen(
             statusMessage?.let { msg ->
                 Text(
                     text = msg,
-                    color = if (isError) Color(0xFFDC2626) else Color(0xFF059669),
+                    color = if (isError) extended.accentError else extended.accentSuccess,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp
                 )
@@ -352,7 +591,7 @@ fun SettingsScreen(
             Text(
                 text = "${stringResource(R.string.app_name)} · v$appVersion",
                 fontSize = 12.sp,
-                color = Color(0xFF71717A)
+                color = extended.subtleText
             )
         }
     }

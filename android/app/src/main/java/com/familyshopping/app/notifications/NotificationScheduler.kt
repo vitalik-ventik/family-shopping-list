@@ -81,6 +81,28 @@ object NotificationScheduler {
         WorkManager.getInstance(context).cancelUniqueWork("shopping_reminder_$scheduleId")
     }
 
+    fun scheduleBackgroundItemSync(context: Context) {
+        val workRequest = PeriodicWorkRequestBuilder<NewItemsSyncWorker>(
+            15, TimeUnit.MINUTES
+        )
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            NewItemsSyncWorker.UNIQUE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
+    }
+
+    fun cancelBackgroundItemSync(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(NewItemsSyncWorker.UNIQUE_WORK_NAME)
+    }
+
     private fun calculateInitialDelay(targetHour: Int, targetMinute: Int): Long {
         val now = Calendar.getInstance()
         val target = Calendar.getInstance().apply {

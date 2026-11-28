@@ -355,4 +355,182 @@ object AppStrings {
             else -> ukMap[category.id]
         } ?: category.name
     }
+
+    fun refreshTooltip(lang: String): String = when (lang) {
+        "ru" -> "Обновить список"
+        "en" -> "Refresh list"
+        else -> "Оновити список"
+    }
+
+    fun syncErrorBanner(lang: String, message: String): String = when (lang) {
+        "ru" -> "Ошибка синхронизации: $message"
+        "en" -> "Sync error: $message"
+        else -> "Помилка синхронізації: $message"
+    }
+
+    fun newItemNotificationTitleSingle(lang: String, title: String): String = when (lang) {
+        "ru" -> "Добавлено в список: $title"
+        "en" -> "Added to list: $title"
+        else -> "Додано до списку: $title"
+    }
+
+    fun newItemNotificationTitleMultiple(lang: String, count: Int): String = when (lang) {
+        "ru" -> "Новые товары в списке ($count)"
+        "en" -> "New items in shopping list ($count)"
+        else -> "Нові товари у списку ($count)"
+    }
+
+    fun newItemNotificationMore(lang: String, extraCount: Int): String = when (lang) {
+        "ru" -> "и ещё $extraCount..."
+        "en" -> "and $extraCount more..."
+        else -> "та ще $extraCount..."
+    }
+
+    fun todayLabel(lang: String): String = when (lang) {
+        "ru" -> "Сегодня"
+        "en" -> "Today"
+        else -> "Сьогодні"
+    }
+
+    fun yesterdayLabel(lang: String): String = when (lang) {
+        "ru" -> "Вчера"
+        "en" -> "Yesterday"
+        else -> "Вчора"
+    }
+
+    fun showMoreWeekBtn(lang: String): String = when (lang) {
+        "ru" -> "Показать ещё"
+        "en" -> "Show more"
+        else -> "Показати ще"
+    }
+
+    fun showAllHistoryBtn(lang: String): String = when (lang) {
+        "ru" -> "Показать все"
+        "en" -> "Show all"
+        else -> "Показати всі"
+    }
+
+    fun emptyTodayWithOlderMessage(lang: String): String = when (lang) {
+        "ru" -> "За выбранный период позиций нет"
+        "en" -> "No items in this period"
+        else -> "За вибраний період позицій немає"
+    }
+
+    fun olderItemsHiddenLabel(lang: String, count: Int, fromDate: String): String = when (lang) {
+        "ru" -> "С $fromDate · ещё $count ранее"
+        "en" -> "Since $fromDate · $count earlier"
+        else -> "З $fromDate · ще $count раніше"
+    }
+
+    fun noteLabel(lang: String): String = when (lang) {
+        "ru" -> "Примечание"
+        "en" -> "Note"
+        else -> "Примітка"
+    }
+
+    fun notePlaceholder(lang: String): String = when (lang) {
+        "ru" -> "Например: без сахара, спелые..."
+        "en" -> "e.g. brand, ripeness..."
+        else -> "Наприклад: без цукру, стиглі..."
+    }
+
+    fun listDisplayTitle(lang: String): String = when (lang) {
+        "ru" -> "Отображение карточек"
+        "en" -> "Card Display"
+        else -> "Відображення карток"
+    }
+
+    fun showAddedByLabel(lang: String): String = when (lang) {
+        "ru" -> "Показывать, кто добавил"
+        "en" -> "Show who added"
+        else -> "Показувати, хто додав"
+    }
+
+    fun showTimestampsLabel(lang: String): String = when (lang) {
+        "ru" -> "Показывать время добавления, покупки и отмены"
+        "en" -> "Show added, bought & cancelled time"
+        else -> "Показувати час додавання, покупки та відміни"
+    }
+
+    fun categoryBackgroundsLabel(lang: String): String = when (lang) {
+        "ru" -> "Градиентный фон категорий"
+        "en" -> "Category gradient backgrounds"
+        else -> "Градієнтний фон категорій"
+    }
+
+    fun userNameLabel(lang: String): String = when (lang) {
+        "ru" -> "Ваше имя (кто добавил)"
+        "en" -> "Your name (added by)"
+        else -> "Ваше ім'я (хто додав)"
+    }
+
+    fun appearanceTitle(lang: String): String = when (lang) {
+        "ru" -> "Тема оформления"
+        "en" -> "Theme"
+        else -> "Тема оформлення"
+    }
+
+    fun themeSystem(lang: String): String = when (lang) {
+        "ru" -> "Системная"
+        "en" -> "System"
+        else -> "Системна"
+    }
+
+    fun themeLight(lang: String): String = when (lang) {
+        "ru" -> "Светлая"
+        "en" -> "Light"
+        else -> "Світла"
+    }
+
+    fun themeDark(lang: String): String = when (lang) {
+        "ru" -> "Тёмная"
+        "en" -> "Dark"
+        else -> "Темна"
+    }
+
+    fun colorSchemeTitle(lang: String): String = when (lang) {
+        "ru" -> "Цветовая схема"
+        "en" -> "Color scheme"
+        else -> "Кольорова схема"
+    }
+
+    fun colorSchemeName(schemeId: String, lang: String): String = when (schemeId) {
+        "sage" -> when (lang) {
+            "ru" -> "Шалфей"
+            "en" -> "Sage"
+            else -> "Шавлія"
+        }
+        "ocean" -> when (lang) {
+            "ru" -> "Океан"
+            "en" -> "Ocean"
+            else -> "Океан"
+        }
+        "sand" -> when (lang) {
+            "ru" -> "Песок"
+            "en" -> "Sand"
+            else -> "Пісок"
+        }
+        "lavender" -> when (lang) {
+            "ru" -> "Лаванда"
+            "en" -> "Lavender"
+            else -> "Лаванда"
+        }
+        else -> when (lang) {
+            "ru" -> "Графит"
+            "en" -> "Graphite"
+            else -> "Графіт"
+        }
+    }
+
+    fun connectingStatus(lang: String): String = when (lang) {
+        "ru" -> "Подключение и сохранение..."
+        "en" -> "Connecting & saving..."
+        else -> "Підключення та збереження..."
+    }
+
+    fun partialKeysError(lang: String): String = when (lang) {
+        "ru" -> "Заполните API Key, Project ID и App ID или очистите их для локального режима"
+        "en" -> "Fill in API Key, Project ID, and App ID, or clear them for local mode"
+        else -> "Заповніть API Key, Project ID та App ID або очистіть їх для локального режиму"
+    }
 }

@@ -7,12 +7,28 @@ import {
   deleteDoc,
   updateDoc,
   onSnapshot,
-  query,
-  orderBy,
   Firestore,
   writeBatch,
   deleteField,
 } from 'firebase/firestore';
+
+function sanitizeForFirestore<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((v) => v !== undefined)
+      .map((v) => sanitizeForFirestore(v)) as unknown as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, val]) => {
+      if (val !== undefined) {
+        result[key] = sanitizeForFirestore(val);
+      }
+    });
+    return result as T;
+  }
+  return value;
+}
 import {
   FirebaseConfig,
   ShoppingItem,
@@ -74,6 +90,7 @@ class FirebaseSyncManager {
   private currentStatus: SyncStatus = {
     state: 'disconnected',
   };
+  private initialSnapshotSeededGroups: Set<string> = new Set();
 
   constructor() {
     this.currentConfig = this.loadStoredConfig();
@@ -285,24 +302,31 @@ class FirebaseSyncManager {
     if (!this.firestore) return;
 
     try {
-      const groupId = this.currentConfig.groupId || 'default-family';
+      const groupId = (this.currentConfig.groupId || 'my-family').trim() || 'my-family';
 
-      // 1. Items Listener
+      // 1. Items Listener (fetch full collection and sort client-side so docs without createdAt are never excluded)
       const itemsCol = collection(this.firestore, 'family_groups', groupId, 'items');
-      const itemsQuery = query(itemsCol, orderBy('createdAt', 'desc'));
 
       this.unsubscribeItems = onSnapshot(
-        itemsQuery,
+        itemsCol,
         (snapshot) => {
-          if (snapshot.empty && this.cachedItems.length > 0) {
+          if (
+            snapshot.empty &&
+            !snapshot.metadata.fromCache &&
+            !this.initialSnapshotSeededGroups.has(groupId) &&
+            this.cachedItems.length > 0
+          ) {
             // First time seeding if completely fresh Firestore collection
+            this.initialSnapshotSeededGroups.add(groupId);
             this.seedFirestoreInitialData();
             return;
           }
+          this.initialSnapshotSeededGroups.add(groupId);
           const items: ShoppingItem[] = [];
           snapshot.forEach((d) => {
             items.push({ id: d.id, ...(d.data() as Omit<ShoppingItem, 'id'>) });
           });
+          items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           this.cachedItems = items;
           this.mergeRecentItemsFromList(items);
           this.saveLocalCache();
@@ -310,7 +334,7 @@ class FirebaseSyncManager {
           this.updateStatus({
             state: 'connected',
             lastSyncTime: Date.now(),
-            details: `Connected to Firestore (Project: ${this.currentConfig.projectId}, Group: ${this.currentConfig.groupId})`,
+            details: `Connected to Firestore (Project: ${this.currentConfig.projectId}, Group: ${groupId})`,
           });
         },
         (error) => {
@@ -380,28 +404,28 @@ class FirebaseSyncManager {
       this.cachedItems.forEach((item) => {
         const itemRef = doc(this.firestore!, 'family_groups', groupId, 'items', item.id);
         const { id, ...data } = item;
-        batch.set(itemRef, data);
+        batch.set(itemRef, sanitizeForFirestore(data));
       });
 
       // Seed categories
       this.cachedCategories.forEach((cat) => {
         const catRef = doc(this.firestore!, 'family_groups', groupId, 'categories', cat.id);
         const { id, ...data } = cat;
-        batch.set(catRef, data);
+        batch.set(catRef, sanitizeForFirestore(data));
       });
 
       // Seed templates
       this.cachedTemplates.forEach((tmpl) => {
         const tmplRef = doc(this.firestore!, 'family_groups', groupId, 'templates', tmpl.id);
         const { id, ...data } = tmpl;
-        batch.set(tmplRef, data);
+        batch.set(tmplRef, sanitizeForFirestore(data));
       });
 
       // Seed schedules
       this.cachedSchedules.forEach((sch) => {
         const schRef = doc(this.firestore!, 'family_groups', groupId, 'schedules', sch.id);
         const { id, ...data } = sch;
-        batch.set(schRef, data);
+        batch.set(schRef, sanitizeForFirestore(data));
       });
 
       await batch.commit();
@@ -548,9 +572,19 @@ class FirebaseSyncManager {
 
   // --- Config update & connection test ---
   public async saveConfig(config: FirebaseConfig): Promise<void> {
-    this.currentConfig = { ...config };
+    const normalized: FirebaseConfig = {
+      ...config,
+      apiKey: (config.apiKey || '').trim(),
+      projectId: (config.projectId || '').trim(),
+      appId: (config.appId || '').trim(),
+      storageBucket: (config.storageBucket || '').trim(),
+      messagingSenderId: (config.messagingSenderId || '').trim(),
+      authDomain: (config.authDomain || '').trim(),
+      groupId: (config.groupId || '').trim() || 'my-family',
+    };
+    this.currentConfig = normalized;
     try {
-      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(normalized));
     } catch (e) {
       console.error('Failed to save config to localStorage', e);
     }
@@ -616,9 +650,10 @@ class FirebaseSyncManager {
 
     if (this.currentConfig.mode === 'firebase' && this.firestore) {
       try {
-        const itemRef = doc(this.firestore, 'family_groups', this.currentConfig.groupId, 'items', id);
+        const groupId = (this.currentConfig.groupId || 'my-family').trim() || 'my-family';
+        const itemRef = doc(this.firestore, 'family_groups', groupId, 'items', id);
         const { id: _, ...data } = newItem;
-        await setDoc(itemRef, data);
+        await setDoc(itemRef, sanitizeForFirestore(data));
         return id;
       } catch (err) {
         console.error('Firestore addItem failed, writing to local cache:', err);
@@ -789,7 +824,7 @@ class FirebaseSyncManager {
     if (this.currentConfig.mode === 'firebase' && this.firestore) {
       try {
         const batch = writeBatch(this.firestore);
-        const groupId = this.currentConfig.groupId;
+        const groupId = (this.currentConfig.groupId || 'my-family').trim() || 'my-family';
 
         if (mode === 'replace') {
           // Delete existing items
@@ -803,12 +838,12 @@ class FirebaseSyncManager {
         newItems.forEach((item) => {
           const ref = doc(this.firestore!, 'family_groups', groupId, 'items', item.id);
           const { id: _, ...data } = item;
-          batch.set(ref, data);
+          batch.set(ref, sanitizeForFirestore(data));
         });
 
         // Update template lastUsedAt
         const tmplRef = doc(this.firestore, 'family_groups', groupId, 'templates', templateId);
-        batch.update(tmplRef, { lastUsedAt: Date.now() });
+        batch.set(tmplRef, { lastUsedAt: Date.now() }, { merge: true });
 
         await batch.commit();
         return newItems.length;
@@ -852,7 +887,7 @@ class FirebaseSyncManager {
       try {
         const ref = doc(this.firestore, 'family_groups', this.currentConfig.groupId, 'templates', id);
         const { id: _, ...data } = newTemplate;
-        await setDoc(ref, data);
+        await setDoc(ref, sanitizeForFirestore(data));
         return id;
       } catch (err) {
         console.error('Firestore saveTemplate failed:', err);
@@ -890,7 +925,7 @@ class FirebaseSyncManager {
       try {
         const ref = doc(this.firestore, 'family_groups', this.currentConfig.groupId, 'categories', id);
         const { id: _, ...data } = newCat;
-        await setDoc(ref, data);
+        await setDoc(ref, sanitizeForFirestore(data));
         return id;
       } catch (err) {
         console.error('Firestore addCategory failed:', err);
@@ -907,7 +942,7 @@ class FirebaseSyncManager {
     if (this.currentConfig.mode === 'firebase' && this.firestore) {
       try {
         const ref = doc(this.firestore, 'family_groups', this.currentConfig.groupId, 'categories', id);
-        await updateDoc(ref, updates);
+        await updateDoc(ref, sanitizeForFirestore(updates as Record<string, unknown>));
         return;
       } catch (err) {
         console.error('Firestore updateCategory failed:', err);
@@ -950,7 +985,7 @@ class FirebaseSyncManager {
       try {
         const ref = doc(this.firestore, 'family_groups', this.currentConfig.groupId, 'schedules', id);
         const { id: _, ...data } = newSchedule;
-        await setDoc(ref, data);
+        await setDoc(ref, sanitizeForFirestore(data));
         return id;
       } catch (err) {
         console.error('Firestore saveSchedule failed:', err);

@@ -30,6 +30,13 @@ class PreferencesManager(context: Context) {
         private const val KEY_SCHEDULES_JSON = "notification_schedules_json"
         private const val KEY_RECENT_ITEMS_JSON = "recent_items_json"
         private const val KEY_APP_LANGUAGE = "app_language"
+        private const val KEY_KNOWN_ITEMS_PREFIX = "known_item_ids_"
+        private const val KEY_KNOWN_SEEDED_PREFIX = "known_items_seeded_"
+        private const val KEY_SHOW_ADDED_BY = "pref_show_added_by"
+        private const val KEY_SHOW_TIMESTAMPS = "pref_show_timestamps"
+        private const val KEY_THEME_MODE = "pref_theme_mode"
+        private const val KEY_COLOR_SCHEME_ID = "pref_color_scheme_id"
+        private const val KEY_CATEGORY_BG_ENABLED = "pref_category_bg_enabled"
     }
 
     fun saveFirebaseConfig(config: FirebaseConfig) {
@@ -154,6 +161,75 @@ class PreferencesManager(context: Context) {
     fun setLanguage(lang: String) {
         val normalized = if (lang == "uk" || lang == "ru" || lang == "en") lang else "uk"
         prefs.edit().putString(KEY_APP_LANGUAGE, normalized).apply()
+    }
+
+    fun getShowAddedBy(): Boolean = prefs.getBoolean(KEY_SHOW_ADDED_BY, true)
+
+    fun setShowAddedBy(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_ADDED_BY, enabled).apply()
+    }
+
+    fun getShowTimestamps(): Boolean = prefs.getBoolean(KEY_SHOW_TIMESTAMPS, true)
+
+    fun setShowTimestamps(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_TIMESTAMPS, enabled).apply()
+    }
+
+    fun getThemeMode(): String {
+        val saved = prefs.getString(KEY_THEME_MODE, "system")
+        return if (saved == "light" || saved == "dark" || saved == "system") saved else "system"
+    }
+
+    fun setThemeMode(mode: String) {
+        val normalized = if (mode == "light" || mode == "dark" || mode == "system") mode else "system"
+        prefs.edit().putString(KEY_THEME_MODE, normalized).apply()
+    }
+
+    fun getColorSchemeId(): String {
+        val saved = prefs.getString(KEY_COLOR_SCHEME_ID, "graphite")
+        return when (saved) {
+            "graphite", "sage", "ocean", "sand", "lavender" -> saved
+            else -> "graphite"
+        }
+    }
+
+    fun setColorSchemeId(schemeId: String) {
+        val normalized = when (schemeId) {
+            "graphite", "sage", "ocean", "sand", "lavender" -> schemeId
+            else -> "graphite"
+        }
+        prefs.edit().putString(KEY_COLOR_SCHEME_ID, normalized).apply()
+    }
+
+    fun getCategoryBackgroundsEnabled(): Boolean = prefs.getBoolean(KEY_CATEGORY_BG_ENABLED, true)
+
+    fun setCategoryBackgroundsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CATEGORY_BG_ENABLED, enabled).apply()
+    }
+
+    fun getKnownItemIds(groupKey: String): Set<String> {
+        return prefs.getStringSet("$KEY_KNOWN_ITEMS_PREFIX$groupKey", emptySet())?.toSet() ?: emptySet()
+    }
+
+    fun saveKnownItemIds(groupKey: String, ids: Set<String>) {
+        // Cap persisted set size while keeping recent IDs safely
+        val bounded = if (ids.size > 2000) ids.toList().takeLast(2000).toSet() else ids
+        prefs.edit().putStringSet("$KEY_KNOWN_ITEMS_PREFIX$groupKey", bounded).apply()
+    }
+
+    fun addKnownItemIds(groupKey: String, ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val merged = getKnownItemIds(groupKey).toMutableSet()
+        merged.addAll(ids)
+        saveKnownItemIds(groupKey, merged)
+    }
+
+    fun hasKnownItemsSeeded(groupKey: String): Boolean {
+        return prefs.getBoolean("$KEY_KNOWN_SEEDED_PREFIX$groupKey", false)
+    }
+
+    fun markKnownItemsSeeded(groupKey: String) {
+        prefs.edit().putBoolean("$KEY_KNOWN_SEEDED_PREFIX$groupKey", true).apply()
     }
 
     fun getRecentItems(): List<RecentItem> {

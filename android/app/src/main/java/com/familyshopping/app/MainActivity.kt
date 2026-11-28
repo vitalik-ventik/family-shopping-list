@@ -9,9 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.familyshopping.app.data.local.PreferencesManager
 import com.familyshopping.app.data.model.ShoppingItem
@@ -29,17 +26,8 @@ import com.familyshopping.app.ui.screens.NotificationScheduleScreen
 import com.familyshopping.app.ui.screens.SettingsScreen
 import com.familyshopping.app.ui.screens.ShoppingListScreen
 import com.familyshopping.app.ui.screens.WeekendTemplateScreen
+import com.familyshopping.app.ui.theme.FamilyShoppingTheme
 import kotlinx.coroutines.launch
-
-private val MinimalLightColorScheme = lightColorScheme(
-    primary = Color(0xFF18181B),
-    onPrimary = Color.White,
-    background = Color(0xFFFAFAFA),
-    surface = Color.White,
-    onBackground = Color(0xFF18181B),
-    onSurface = Color(0xFF18181B),
-    onSurfaceVariant = Color(0xFF71717A)
-)
 
 class MainActivity : ComponentActivity() {
 
@@ -56,7 +44,17 @@ class MainActivity : ComponentActivity() {
         ensureNotificationPermission()
 
         setContent {
-            MaterialTheme(colorScheme = MinimalLightColorScheme) {
+            var themeMode by remember { mutableStateOf(prefs.getThemeMode()) }
+            var colorSchemeId by remember { mutableStateOf(prefs.getColorSchemeId()) }
+            var showAddedBy by remember { mutableStateOf(prefs.getShowAddedBy()) }
+            var showTimestamps by remember { mutableStateOf(prefs.getShowTimestamps()) }
+            var categoryBackgroundsEnabled by remember { mutableStateOf(prefs.getCategoryBackgroundsEnabled()) }
+            var userName by remember { mutableStateOf(prefs.getUserName()) }
+
+            FamilyShoppingTheme(
+                themeModeId = themeMode,
+                colorSchemeId = colorSchemeId
+            ) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     var currentScreen by remember { mutableStateOf("list") }
                     val items by repository.items.collectAsState()
@@ -64,6 +62,8 @@ class MainActivity : ComponentActivity() {
                     val templates by repository.templates.collectAsState()
                     val recentItems by repository.recentItems.collectAsState()
                     val isConnected by repository.isConnected.collectAsState()
+                    val isRefreshing by repository.isRefreshing.collectAsState()
+                    val syncError by repository.syncError.collectAsState()
 
                     var schedules by remember { mutableStateOf(prefs.getSchedules()) }
                     var config by remember { mutableStateOf(prefs.getFirebaseConfig()) }
@@ -80,7 +80,13 @@ class MainActivity : ComponentActivity() {
                             categories = categories,
                             recentItems = recentItems,
                             isConnected = isConnected,
+                            isRefreshing = isRefreshing,
+                            syncError = syncError,
                             lang = appLanguage,
+                            showAddedBy = showAddedBy,
+                            showTimestamps = showTimestamps,
+                            categoryBackgroundsEnabled = categoryBackgroundsEnabled,
+                            onRefresh = { scope.launch { repository.refreshFromServer() } },
                             onChangeLanguage = { newLang ->
                                 prefs.setLanguage(newLang)
                                 appLanguage = newLang
@@ -88,15 +94,16 @@ class MainActivity : ComponentActivity() {
                             onToggleItem = { item -> scope.launch { repository.toggleItem(item) } },
                             onCancelItem = { item -> scope.launch { repository.cancelItem(item) } },
                             onRestoreItem = { item -> scope.launch { repository.restoreItem(item) } },
-                            onAddItem = { title, catId, qty, unit, urgent ->
+                            onAddItem = { title, catId, qty, unit, urgent, note ->
                                 val newItem = ShoppingItem(
                                     id = "item_${System.currentTimeMillis()}",
                                     title = title,
                                     categoryId = catId,
                                     quantity = qty,
                                     unit = unit,
+                                    note = note?.trim()?.takeIf { it.isNotEmpty() },
                                     urgent = urgent,
-                                    addedBy = prefs.getUserName()
+                                    addedBy = userName
                                 )
                                 scope.launch { repository.addItem(newItem) }
                             },
@@ -147,9 +154,40 @@ class MainActivity : ComponentActivity() {
                         "settings" -> SettingsScreen(
                             currentConfig = config,
                             currentLanguage = appLanguage,
+                            currentThemeMode = themeMode,
+                            currentColorSchemeId = colorSchemeId,
+                            showAddedBy = showAddedBy,
+                            showTimestamps = showTimestamps,
+                            categoryBackgroundsEnabled = categoryBackgroundsEnabled,
+                            currentUserName = userName,
                             onChangeLanguage = { newLang ->
                                 prefs.setLanguage(newLang)
                                 appLanguage = newLang
+                            },
+                            onChangeThemeMode = { newMode ->
+                                prefs.setThemeMode(newMode)
+                                themeMode = newMode
+                            },
+                            onChangeColorScheme = { newScheme ->
+                                prefs.setColorSchemeId(newScheme)
+                                colorSchemeId = newScheme
+                            },
+                            onChangeShowAddedBy = { enabled ->
+                                prefs.setShowAddedBy(enabled)
+                                showAddedBy = enabled
+                            },
+                            onChangeShowTimestamps = { enabled ->
+                                prefs.setShowTimestamps(enabled)
+                                showTimestamps = enabled
+                            },
+                            onChangeCategoryBackgrounds = { enabled ->
+                                prefs.setCategoryBackgroundsEnabled(enabled)
+                                categoryBackgroundsEnabled = enabled
+                            },
+                            onChangeUserName = { name ->
+                                val clean = name.trim().ifBlank { "Android" }
+                                prefs.setUserName(clean)
+                                userName = clean
                             },
                             onTestConfig = { testCfg -> repository.testConnection(testCfg) },
                             onSaveConfig = { newConfig ->
